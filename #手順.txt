@@ -1,0 +1,100 @@
+#手順
+Xlounch　を起動する
+-----------------XLaunchsetting----------
+Display Number =0
+（Native OpenGL）
+accell
+
+XLaunchを起動⇒Dockerrun
+
+
+
+# 1) Docker_ReachabilityMapターミナル
+cd Docker_ReachabilityMap
+docker rm -f ros_dev
+docker run -d --name ros_dev -p 9090:9090 -v C:\Users\soma0\Docker_ReachabilityMap:/root ros_dev tail -f /dev/null
+
+docker exec -it ros_dev bash
+
+# 1) Esaki_youbootターミナル
+cd Esaki_youboot
+docker rm -f esaki_youbot
+docker run -d --name esaki_youbot -p 9092:9090 -v C:\Users\soma0\Esaki_youboot:/root esaki_youbot tail -f /dev/null
+
+docker exec -it esaki_youbot bash
+source /opt/ros/noetic/setup.bash
+
+# 1) youboot_simターミナル
+cd youbot_sim_docker
+$env:DISPLAY="host.docker.internal:0.0"
+docker rm -f youbot_ros
+docker run -d --name youbot_ros `
+  -e DISPLAY=$env:DISPLAY `
+  -e LIBGL_ALWAYS_SOFTWARE="1" `
+  -e QT_X11_NO_MITSHM="1" `
+  -e MESA_LOADER_DRIVER_OVERRIDE="llvmpipe" `
+  youbot_ros tail -f /dev/null
+
+docker exec -it youbot_ros bash
+
+
+
+#########################################################
+
+docker network create rosnet
+
+docker network connect rosnet ros_dev
+docker network connect rosnet youbot_ros
+docker network connect rosnet esaki_youbot
+
+#########################################################
+
+
+
+# 2) Docker_ReachabilityMapターミナル
+export ROS_MASTER_URI=http://ros_dev:11311
+export ROS_HOSTNAME=ros_dev 
+source /opt/ros/noetic/setup.bash
+roslaunch rosbridge_server rosbridge_websocket.launch
+
+
+cd RM
+source devel/setup.bash
+export ROS_MASTER_URI=http://ros_dev:11311
+export ROS_HOSTNAME=ros_dev 
+
+roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
+rosrun sampled_reachability_maps MR_IRM_firstRoute_fixed.py
+
+cd Detect_ws
+source devel/setup.bash
+export ROS_MASTER_URI=http://ros_dev:11311
+export ROS_HOSTNAME=ros_dev 
+
+rosrun detect_pkg DetectTarget.py \
+  --win=0.5,0.25,0.25 \
+  --wout=0.21,0.58,0.21
+
+rosrun detect_pkg Bottle_info_Save_to_CSV.py
+
+
+
+# 2) Esaki_youbootターミナル
+cd catkin_ws
+export ROS_MASTER_URI=http://ros_dev:11311
+export ROS_HOSTNAME=esaki_youbot
+source devel/setup.bash
+rosrun esaki_youbot_project_gradient youbot_real_trajectory_node.py
+  
+# 2) youboot_simターミナル
+export ROS_MASTER_URI=http://ros_dev:11311
+export ROS_HOSTNAME=youbot_ros 
+source /opt/ros/noetic/setup.bash
+source /root/catkin_ws/devel/setup.bash
+
+grep -rl 'xacro.py' ~/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
+roslaunch youbot_gazebo_robot youbot.launch
+
+rosrun rviz rviz
+
+

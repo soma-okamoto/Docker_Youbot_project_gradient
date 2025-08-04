@@ -22,6 +22,7 @@ docker rm -f esaki_youbot
 docker run -d --name esaki_youbot -p 9092:9090 -v C:\Users\soma0\Esaki_youboot:/root esaki_youbot tail -f /dev/null
 
 docker exec -it esaki_youbot bash
+
 source /opt/ros/noetic/setup.bash
 
 # 1) youboot_simターミナル
@@ -84,8 +85,10 @@ cd catkin_ws
 export ROS_MASTER_URI=http://ros_dev:11311
 export ROS_HOSTNAME=esaki_youbot
 source devel/setup.bash
+
 rosrun esaki_youbot_project_gradient youbot_real_trajectory_node.py
-  
+rosrun esaki_youbot_project_gradient Bridge_Simulation_trajectry.py
+
 # 2) youboot_simターミナル
 export ROS_MASTER_URI=http://ros_dev:11311
 export ROS_HOSTNAME=youbot_ros 

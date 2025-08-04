@@ -1,0 +1,38 @@
+--------------------------------DockerBuild-----------------
+cd Esaki_youbot
+docker build -t esaki_youbot .
+
+
+---------------------------------Dockerコンテナ立ち上げ---------------------------------
+cd Esaki_youbot
+docker rm -f esaki_youbot
+docker run -d --name esaki_youbot -p 9092:9090 -v C:\Users\soma0\Esaki_youboot:/root esaki_youbot tail -f /dev/null
+
+---------------------------------コンテナエントリー-------------------------------------
+
+docker exec -it esaki_youbot bash
+source /opt/ros/noetic/setup.bash
+
+export ROS_MASTER_URI=http://ros_dev:11311
+export ROS_HOSTNAME=esaki_youbot
+  
+-------------------------------
+cd catkin_ws
+
+catkin build
+
+source devel/setup.bash
+rosrun esaki_youbot_project_gradient youbot_real_trajectory_node.py
+
+
+Unity-RosConnector
+-------------------------------------
+ws://192.168.11.11:9090
+ws://localhost:9090
+-------------------------------------
+
+docker network create rosnet
+
+docker network connect rosnet ros_dev
+docker network connect rosnet youbot_ros
+docker network connect rosnet esaki_youbot

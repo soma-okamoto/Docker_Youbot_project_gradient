@@ -1,0 +1,35 @@
+<launch>
+  <arg name="robot_name" default="youbot"/>
+
+  <group ns="$(arg robot_name)">
+
+    <!-- Degree -->
+    <!-- <param name="arm1_joint1" value="-22.935384205793" type="double"/>
+    <param name="arm1_joint2" value="50.0153852520774" type="double"/>
+    <param name="arm1_joint3" value="59.9653999328028" type="double"/>
+    <param name="arm1_joint4" value="-19.7253523888095" type="double"/>
+    <param name="arm1_joint5" value="-0.689718320269634" type="double"/> -->
+    <param name="arm1_joint1" value="-10" type="double"/>
+    <param name="arm1_joint2" value="-45" type="double"/>
+    <param name="arm1_joint3" value="90" type="double"/>
+    <param name="arm1_joint4" value="45" type="double"/>
+    <param name="arm1_joint5" value="0" type="double"/>
+
+    <!-- Degree -->
+    <!-- <param name="arm2_joint1" value="-44.1384616811782" type="double"/>
+    <param name="arm2_joint2" value="-26.944230549268" type="double"/>
+    <param name="arm2_joint3" value="58.0093020526422" type="double"/>
+    <param name="arm2_joint4" value="67.031128176307" type="double"/>
+    <param name="arm2_joint5" value="3.04464796194824" type="double"/> -->
+    <param name="arm2_joint1" value="-60" type="double"/>
+    <param name="arm2_joint2" value="-50" type="double"/>
+    <param name="arm2_joint3" value="80" type="double"/>
+    <param name="arm2_joint4" value="80" type="double"/>
+    <param name="arm2_joint5" value="0" type="double"/>
+
+    <param name="base_x" value="0" type="double"/>
+    <param name="base_y" value="0" type="double"/>
+
+    <node pkg="esaki_youbot_project_gradient" name="youbot_move_arms_to_start_joint_position" type="youbot_move_arms_to_start_joint_position" output="screen"/>
+  </group>
+</launch>

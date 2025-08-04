@@ -1,0 +1,156 @@
+<launch>
+  <arg name="robot_name" default="youbot"/>
+
+  <group ns="$(arg robot_name)">
+
+
+    <param name="publish_velocity" value="1" type="bool"/>
+    <param name="use_gripper" value="1" type="bool"/>
+    <param name="show_image_window" value="1" type="bool"/>
+    <param name="show_image_window_object_callback" value="1" type="bool"/>
+    <param name="target_label_1" value="bottle" type="string"/>
+    <!-- <param name="target_label_2" value="cup" type="string"/> -->
+    <param name="target_label_2" value="oreo" type="string"/>
+    <param name="target_ar_marker_id_1" value="0" type="int"/>
+    <param name="target_ar_marker_id_2" value="1" type="int"/>
+
+    <!-- <param name="approach_pri" value="1" type="int"/>
+    <param name="collision_pri" value="2" type="int"/>
+    <param name="joint_limit_pri" value="3" type="int"/>
+    <param name="viewpoint_pri" value="4" type="int"/> -->
+
+    <!-- <param name="arm_1_joint_0_offset_x" value="0.05175" type="double"/>
+    <param name="arm_1_joint_0_offset_y" value="-0.1" type="double"/>
+    <param name="arm_1_joint_0_offset_z" value="0.008" type="double"/> -->
+    <!-- <param name="arm_2_joint_0_offset_x" value="-0.05175" type="double"/>
+    <param name="arm_2_joint_0_offset_y" value="0.1" type="double"/>
+    <param name="arm_2_joint_0_offset_z" value="0.08" type="double"/> -->
+
+    <param name="arm_1_joint_0_offset_x" value="0.0" type="double"/>
+    <param name="arm_1_joint_0_offset_y" value="-0.0" type="double"/>
+    <param name="arm_1_joint_0_offset_z" value="0.008" type="double"/>
+    <param name="arm_2_joint_0_offset_x" value="-0.0" type="double"/>
+    <param name="arm_2_joint_0_offset_y" value="0.0" type="double"/>
+    <param name="arm_2_joint_0_offset_z" value="0.008" type="double"/>
+
+    <param name="turn_clockwise_search"  value="1" type="bool"/>
+    <param name="turn_clockwise_search_place"  value="1" type="bool"/>
+
+    <param name="min_num_get_obj_in_camera_count" value="20" type="int"/>
+    <param name="max_num_lose_obj_in_camera_count" value="10000" type="int"/>
+
+    <param name="num_average_filter" value="1" type="int"/>
+
+    <!-- [deg] -->
+    <param name="r_ori_g_z_euler_j1"  value="0" type="double"/>
+    <param name="r_ori_g_y_euler" value="90" type="double"/>
+    <param name="r_ori_g_z_euler_j5"   value="0" type="double"/>
+
+    <!-- [m] -->
+    <param name="distance_for_specific_obj" value="0.05" type="double"/>
+
+    <!-- [-] -->
+    <param name="k_dq_max_approach" value="5" type="double"/>
+    <param name="l_dq_max_approach" value="0.15" type="double"/>
+    <!-- [deg/s] -->
+    <param name="dq_max_approach"   value="5" type="double"/>
+    <param name="dq_base_max_approach_z"   value="5" type="double"/>
+    <!-- [m/s] -->
+    <!-- <param name="dq_base_max_approach_x"   value="0.03" type="double"/>
+    <param name="dq_base_max_approach_y"   value="0.03" type="double"/> -->
+    <param name="dq_base_max_approach_x"   value="0.03" type="double"/>
+    <param name="dq_base_max_approach_y"   value="0.03" type="double"/>
+
+    <!-- [deg/s] -->
+    <param name="dq_max_alignment" value="8" type="double"/>
+
+    <param name="k_approach" value="1" type="double"/>
+    <param name="k_u0_approach" value="10" type="double"/>
+
+    <!-- <param name="k_collision" value="40" type="double"/> -->
+    <param name="k_collision" value="5" type="double"/>
+    <param name="k_u0_collision" value="1" type="double"/>
+    <!-- [m] -->
+    <param name="collision_threshold_1" value="0.15" type="double"/>
+    <param name="collision_threshold_2" value="0.1" type="double"/>
+
+    <param name="k_joint_limit"  value="2" type="double"/>
+    <param name="k_u0_H_joint_limit" value="1" type="double"/>
+
+    <!-- [rad] -->
+    <param name="angle_min" value="-1.5" type="double"/>
+    <param name="angle_max" value="1.5" type="double"/>
+
+    <param name="k_u0" value="1" type="double"/>
+
+    <param name="use_H_frameout_obj" value="1" type="bool"/>
+    <param name="use_H_occlusion"    value="1" type="bool"/>
+    <param name="use_H_depth_range"  value="1" type="bool"/>
+
+    <param name="k_f"            value="4" type="double"/>
+    <param name="k_occ"          value="4" type="double"/>
+    <param name="k_depth"        value="4" type="double"/>
+
+    <!-- no unit -->
+    <param name="frameout_threshold_1"  value="0.4" type="double"/>
+    <param name="frameout_threshold_2"  value="0.65" type="double"/>
+    <!-- [pixel] -->
+    <!-- <param name="occlusion_threshold"  value="100" type="double"/> -->
+    <param name="occlusion_threshold"  value="50" type="double"/>
+    <!-- [m] -->
+    <!-- <param name="depth_range_threshold_1"  value="0.3" type="double"/>
+    <param name="depth_range_threshold_2"  value="0.2" type="double"/> -->
+    <!-- <param name="depth_range_threshold_1"  value="0.75" type="double"/>
+    <param name="depth_range_threshold_2"  value="0.65" type="double"/> -->
+    <param name="depth_range_threshold_1"  value="0.65" type="double"/>
+    <param name="depth_range_threshold_2"  value="0.55" type="double"/>
+
+    <!-- [m] -->
+    <param name="eef_virtual_link_length" value="0.1" type="double"/>
+
+    <!-- [m] -->
+    <param name="norm_obj_eef_joint_0_end_condition"        value="0.5" type="double"/>
+    <param name="dr_posi_end_condition"                     value="0.01" type="double"/>
+    <param name="norm_place_eef_joint_0_end_condition"      value="0.5" type="double"/>
+    <param name="dr_posi_end_condition_place"               value="0.01" type="double"/>
+    <param name="dr_posi_end_condition_for_alignment"       value="0.01" type="double"/>
+    <param name="dr_posi_end_condition_for_alignment_place" value="0.01" type="double"/>
+    <param name="norm_smartglass_eef_joint_0_end_condition" value="0.5" type="double"/>
+    <param name="dr_posi_end_condition_smartglass"          value="0.01" type="double"/>
+    <!-- [deg] -->
+    <param name="dr_ori_end_condition" value="5" type="double"/>
+    <param name="dr_ori_end_condition_for_alignment" value="5" type="double"/>
+    <!-- [-] -->
+    <param name="H_frameout_end_condition" value="1" type="double"/>
+    <param name="H_occlusion_end_condition" value="1" type="double"/>
+
+    <param name="k_alignment" value="1" type="double"/>
+
+    <!-- zed -->
+    <!-- <remap from="/camera_rgb_topic" to="/zed/rgb/image_raw_color" />
+    <remap from="/camera_pointcloud_topic" to="/zed/point_cloud/cloud_registered"/> -->
+
+    <!-- xtion -->
+    <remap from="camera_rgb_topic" to="camera/rgb/image_raw" />
+    <remap from="camera_pointcloud_topic" to="camera/depth_registered/points"/>
+
+    
+    
+
+    <!-- realsense -->
+    <!-- <remap from="/camera_rgb_topic" to="/camera/color/image_raw" />
+    <remap from="/camera_pointcloud_topic" to="/camera/depth_registered/points"/> -->
+
+    <!-- <node pkg="object_callback" name="object_recognize_node" type="yolo_boundingbox_and_color_marker_center_depth_pub" output="screen"/> -->
+    
+  
+    <!-- <node pkg="youbot_projected_gradient" name="object_callback" type="object_callback" output="screen"/> -->
+    <node pkg="youbot_projected_gradient" name="youbot_pick_and_place_server" type="youbot_pick_and_place_server" output="screen"/>
+
+    <include file="$(find motion_planning)/launch/motion_planning_server.launch"/>
+
+    <node pkg="tf" type="static_transform_publisher" name="realsense_to_youbot_tf_broadcaster" args="0.06 0.0 0.0 0.6755902 0.0 0.7372773 0.0 /arm_2_link_5 /camera_link 100"/>
+  </group>
+  
+
+</launch>

@@ -36,3 +36,8 @@ docker network create rosnet
 docker network connect rosnet ros_dev
 docker network connect rosnet youbot_ros
 docker network connect rosnet esaki_youbot
+
+
+
+SIM
+https://drive.google.com/drive/folders/16L6TAK8tGN2ikHJAiXcliRC7r0-tZ0Eg?usp=sharing

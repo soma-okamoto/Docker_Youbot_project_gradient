@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y \
       libopencv-dev\
       ros-noetic-moveit-ros-planning-interface\
       ros-noetic-control-msgs\
+      libyaml-cpp-dev\
+      pkg-config\
     && rm -rf /var/lib/apt/lists/*
 
 # rosdep 初期化

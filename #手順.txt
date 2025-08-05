@@ -22,7 +22,6 @@ docker rm -f esaki_youbot
 docker run -d --name esaki_youbot -p 9092:9090 -v C:\Users\soma0\Esaki_youboot:/root esaki_youbot tail -f /dev/null
 
 docker exec -it esaki_youbot bash
-
 source /opt/ros/noetic/setup.bash
 
 # 1) youboot_simターミナル
@@ -87,7 +86,9 @@ export ROS_HOSTNAME=esaki_youbot
 source devel/setup.bash
 
 rosrun esaki_youbot_project_gradient youbot_real_trajectory_node.py
+rosrun esaki_youbot_project_gradient youbot_real_recover_trajectory.py
 rosrun esaki_youbot_project_gradient Bridge_Simulation_trajectry.py
+rosrun esaki_youbot_project_gradient Bridge_Simulation_gripper.py
 
 # 2) youboot_simターミナル
 export ROS_MASTER_URI=http://ros_dev:11311
@@ -96,7 +97,9 @@ source /opt/ros/noetic/setup.bash
 source /root/catkin_ws/devel/setup.bash
 
 grep -rl 'xacro.py' ~/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
+
 roslaunch youbot_gazebo_robot youbot.launch
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch
 
 rosrun rviz rviz
 

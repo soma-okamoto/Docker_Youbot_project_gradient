@@ -85,11 +85,18 @@ source devel/setup.bash
 
 rosrun esaki_youbot_project_gradient youbot_real_trajectory_node.py
 rosrun esaki_youbot_project_gradient youbot_real_recover_trajectory.py
+rosrun esaki_youbot_project_gradient Bridge_Simulation_command.py
 
-
- rosrun esaki_youbot_project_gradient Bridge_Simulation_command.py
 rosrun esaki_youbot_project_gradient Bridge_Simulation_gripper.py
 rosrun esaki_youbot_project_gradient gripper.py
+
+
+roslaunch esaki_slam youbot_move_base.launch
+roslaunch slam_toolbox online_async.launch 
+
+rosrun esaki_youbot_project_gradient Origin_move_pub.py 
+
+
 
 # 2) youboot_simターミナル
 export ROS_MASTER_URI=http://ros_dev:11311
@@ -100,7 +107,9 @@ source /root/catkin_ws/devel/setup.bash
 grep -rl 'xacro.py' ~/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
 
 roslaunch youbot_gazebo_robot youbot.launch
+
 roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=empty_world
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=tower_of_hanoi
 
 rosrun rviz rviz
 

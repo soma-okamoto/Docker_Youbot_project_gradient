@@ -30,6 +30,10 @@ RUN apt-get update && apt-get install -y \
       ros-noetic-sparse-bundle-adjustment\
       ros-noetic-map-server\
       libceres-dev\
+      ros-noetic-move-base\
+      ros-noetic-interactive-markers\
+      libceres1\
+      ros-noetic-teb-local-planner\
 
     && rm -rf /var/lib/apt/lists/*
 

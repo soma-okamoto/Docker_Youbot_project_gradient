@@ -28,7 +28,7 @@ source /opt/ros/noetic/setup.bash
 cd youbot_sim_docker
 $env:DISPLAY="host.docker.internal:0.0"
 docker rm -f youbot_ros
-docker run -d --name youbot_ros `
+docker run --gpus all -d --name youbot_ros `
   -e DISPLAY=$env:DISPLAY `
   -e LIBGL_ALWAYS_SOFTWARE="1" `
   -e QT_X11_NO_MITSHM="1" `
@@ -88,7 +88,9 @@ source devel/setup.bash
 rosrun esaki_youbot_project_gradient youbot_real_trajectory_node.py
 rosrun esaki_youbot_project_gradient youbot_real_recover_trajectory.py
 rosrun esaki_youbot_project_gradient Bridge_Simulation_trajectry.py
+
 rosrun esaki_youbot_project_gradient Bridge_Simulation_gripper.py
+rosrun esaki_youbot_project_gradient gripper.py
 
 # 2) youboot_simターミナル
 export ROS_MASTER_URI=http://ros_dev:11311

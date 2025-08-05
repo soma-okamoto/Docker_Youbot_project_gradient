@@ -1,0 +1,18 @@
+# move base params for MECANUMROVER
+
+# プランナーの設定
+BaseGlobalPlanner:
+  allow_unknown: true
+  use_dijkstra: false
+  use_quadratic: true
+  use_grid_path: false
+  old_navfn_behavior: false
+#base_local_planner: "dwa_local_planner/DWAPlannerROS"
+# base_local_planner: "base_local_planner/TrajectoryPlannerROS"
+
+# 指令値の出力周波数（制御周期）
+controller_frequency: 10.0
+
+shutdown_costmaps: false
+
+

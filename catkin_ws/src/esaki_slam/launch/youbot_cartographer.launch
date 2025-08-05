@@ -1,0 +1,49 @@
+<!--
+SLAM（cartographer）サンプルのlaunch
+
+実行にはLRFが必要です。
+地図を生成していくためにはメガローバーを手動で移動させる必要があります。
+ゲームパッド操作サンプルまたはマウス（タッチパッド）操作サンプルを使用してください。
+
+起動コマンド： roslaunch megarover_samples cartographer.launch
+-->
+
+<launch>
+<node name="cartographer_node" pkg="cartographer_ros"
+      type="cartographer_node" args="
+          -configuration_directory $(find mecanumrover_samples)/configuration_files/cartographer/
+          -configuration_basename mecanumrover_2d_cartographer.lua"
+      output="screen">
+    <remap from="scan" to="youbot/scan_filtered" />
+    <!-- <remap from="odom" to="youbot/odom" /> -->
+  </node>
+
+  <!-- グリッドマップの分解能の設定 -->
+  <node name="cartographer_occupancy_grid_node" pkg="cartographer_ros"
+      type="cartographer_occupancy_grid_node" args="-resolution 0.05" >
+      <!-- <remap from="map" to="/youbot/map" /> -->
+      </node>
+<group ns="youbot">
+ <include file="$(find youbot_nav_msr)/launch/laser_filter.launch" />
+  <include file="$(find youbot_nav_msr)/launch/cloud_filter.launch" />
+  <!-- cartographer -->
+  
+
+  <!-- Rviz -->
+  <node name="rviz" pkg="rviz" type="rviz" required="true"
+      args="-d $(find mecanumrover_samples)/configuration_files/rviz/youbot_mecanum_gp_explore.rviz" />
+</group>
+<!-- <include file="$(find mir_2dslam)/launch/merge_maps.launch" /> -->
+<!-- <node pkg="tf" type="static_transform_publisher" name="world_to_youbot_tf_broadcaster"  args="0 0 0 0 0 0 /map /youbot/map 100"/> -->
+  <!-- <node pkg="tf" type="static_transform_publisher" name="world_to_mecanum_tf_broadcaster" args="-1.5 -4.0 0 1.57 0 0 /map /mecanum/map 100"/> -->
+  <!-- <node pkg="tf" type="static_transform_publisher" name="world_to_$(arg third_tb3)_tf_broadcaster" args="0 0 0 0 0 0 /map /$(arg third_tb3)/map 100"/> -->
+
+  <!-- <node pkg="tf" type="static_transform_publisher" name="realsense_to_youbot_tf_broadcaster" args="0.06 0 0.0 0.6755902 0 0.7372773 0 /arm_2_link_5 /camera_link 100"/> -->
+  
+  <node pkg="youbot_projected_gradient" type="pose_pub" name="youbot_pose_pub" output = "screen"/>
+
+<include file="$(find obstacle_detector)/launch/nodes.launch" />  
+
+<!-- <node pkg="mecanum_ctrl" type="map_background" name="map_background" output="screen"/>
+<include file="$(find pointcloud_to_laserscan)/launch/sample_node.launch" /> -->
+</launch>

@@ -26,6 +26,11 @@ RUN apt-get update && apt-get install -y \
       ros-noetic-control-msgs\
       libyaml-cpp-dev\
       pkg-config\
+      ros-noetic-rviz\
+      ros-noetic-sparse-bundle-adjustment\
+      ros-noetic-map-server\
+      libceres-dev\
+
     && rm -rf /var/lib/apt/lists/*
 
 # rosdep 初期化

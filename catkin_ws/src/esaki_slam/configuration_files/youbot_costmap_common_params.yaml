@@ -1,0 +1,47 @@
+#costmap common params for MECANUMROVER
+
+# これ以下の距離にある物体を障害物として扱う2.5
+obstacle_range: 2.5
+# これ以下の距離に物体が検出された場合、ロボットとその物体との間に障害物はないものとして扱う3
+raytrace_range: 3.0
+
+# ロボットの大きさに関するパラメータ
+# メカナムローバーVer2.0 Ver2.1の場合
+footprint: [[0.3, -0.2], [0.3, 0.2], [-0.3, 0.2], [-0.3, -0.2]]
+# footprint_padding: 0.1
+# メカナムローバーG120の場合
+#footprint: [[0.3, -0.25], [0.3, 0.25], [-0.3, 0.25], [-0.3, -0.25]]
+
+
+
+inflation_radius: 0.1 #0.1
+cost_scaling_factor: 0.05 #0.05
+# コストマップのタイプの設定
+map_type: costmap
+
+# plugins:
+  # - {name: static_layer, type: "costmap_2d::StaticLayer"}
+  # - {name: obstacles, type: "costmap_2d::ObstacleLayer "}
+  # - {name: inflator, type: "costmap_2d::InflationLayer"}
+# static_layer:
+map_topic: /map
+subscribe_to_updates: true
+trinary_costmap: true
+# inflator:
+#   inflation_radius: 0.4
+#   cost_scaling_factor: 1.0
+# LRFの設定 
+observation_sources: scan 
+scan: {
+  # sensor_frame: map, 
+  data_type: LaserScan, 
+  topic: /youbot/scan, 
+  marking: true, 
+  clearing: true, 
+  inf_is_valid: true,
+  # observation_persistence: 30.0,
+  observation_persistence: 1,
+  min_obstacle_height: -0.1, 
+  max_obstacle_height: 0.5}
+
+

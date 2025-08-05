@@ -11,6 +11,7 @@ docker run -d --name esaki_youbot -p 9092:9090 -v C:\Users\soma0\Esaki_youboot:/
 ---------------------------------コンテナエントリー-------------------------------------
 
 docker exec -it esaki_youbot bash
+
 source /opt/ros/noetic/setup.bash
 
 

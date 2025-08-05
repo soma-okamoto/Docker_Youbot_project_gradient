@@ -30,9 +30,7 @@ $env:DISPLAY="host.docker.internal:0.0"
 docker rm -f youbot_ros
 docker run --gpus all -d --name youbot_ros `
   -e DISPLAY=$env:DISPLAY `
-  -e LIBGL_ALWAYS_SOFTWARE="1" `
   -e QT_X11_NO_MITSHM="1" `
-  -e MESA_LOADER_DRIVER_OVERRIDE="llvmpipe" `
   youbot_ros tail -f /dev/null
 
 docker exec -it youbot_ros bash
@@ -87,8 +85,9 @@ source devel/setup.bash
 
 rosrun esaki_youbot_project_gradient youbot_real_trajectory_node.py
 rosrun esaki_youbot_project_gradient youbot_real_recover_trajectory.py
-rosrun esaki_youbot_project_gradient Bridge_Simulation_trajectry.py
 
+
+ rosrun esaki_youbot_project_gradient Bridge_Simulation_command.py
 rosrun esaki_youbot_project_gradient Bridge_Simulation_gripper.py
 rosrun esaki_youbot_project_gradient gripper.py
 
@@ -101,7 +100,7 @@ source /root/catkin_ws/devel/setup.bash
 grep -rl 'xacro.py' ~/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
 
 roslaunch youbot_gazebo_robot youbot.launch
-roslaunch youbot_gazebo_robot youbot_dual_arm.launch
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=empty_world
 
 rosrun rviz rviz
 

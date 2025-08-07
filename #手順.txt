@@ -22,6 +22,7 @@ docker rm -f esaki_youbot
 docker run -d --name esaki_youbot -p 9092:9090 -v C:\Users\soma0\Esaki_youboot:/root esaki_youbot tail -f /dev/null
 
 docker exec -it esaki_youbot bash
+
 source /opt/ros/noetic/setup.bash
 
 # 1) youboot_simターミナル
@@ -37,12 +38,34 @@ docker exec -it youbot_ros bash
 
 
 
+# 1) sim_devターミナル
+cd Docker_sim
+$env:DISPLAY="host.docker.internal:0.0"
+docker rm -f sim_dev
+docker run --gpus all -d --name sim_dev `
+  -e DISPLAY=$env:DISPLAY `
+  -e QT_X11_NO_MITSHM="1" `
+  -v C:\Users\soma0\Docker_sim:/root `
+  sim_dev tail -f /dev/null
+
+docker exec -it sim_dev bash
+
+cd catkin_ws
+source /opt/ros/noetic/setup.bash
+source /root/catkin_ws/devel/setup.bash
+
+
+
+
+
+
 #########################################################
 
 docker network create rosnet
 
 docker network connect rosnet ros_dev
 docker network connect rosnet youbot_ros
+docker network connect rosnet sim_dev
 docker network connect rosnet esaki_youbot
 
 #########################################################
@@ -96,7 +119,7 @@ roslaunch slam_toolbox online_async.launch
 
 rosrun esaki_youbot_project_gradient Origin_move_pub.py 
 
-
+rosrun esaki_youbot_project_gradient IRM_youbot_baseMove.py
 
 # 2) youboot_simターミナル
 export ROS_MASTER_URI=http://ros_dev:11311
@@ -104,13 +127,49 @@ export ROS_HOSTNAME=youbot_ros
 source /opt/ros/noetic/setup.bash
 source /root/catkin_ws/devel/setup.bash
 
+
+
+
 grep -rl 'xacro.py' ~/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
 
 roslaunch youbot_gazebo_robot youbot.launch
-
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch
 roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=empty_world
 roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=tower_of_hanoi
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=boxed_walls_10x10
 
 rosrun rviz rviz
 
+
+# 2) sim_devターミナル
+export ROS_MASTER_URI=http://ros_dev:11311
+export ROS_HOSTNAME=sim_dev 
+source /opt/ros/noetic/setup.bash
+source /root/catkin_ws/devel/setup.bash
+
+
+nvidia-smi
+
+
+
+
+
+
+1. WSL2 と WSLg の有効化
+管理者権限 PowerShell を開いて、WSL（Linux カーネル）をインストール／有効化します：
+
+powershell
+コピーする
+編集する
+wsl --install
+wsl --set-default-version 2
+最新版 WSLg を取得：
+
+powershell
+コピーする
+編集する
+wsl --update
+PC を再起動。
+
+これで WSL2 + WSLg（Wayland/X11 のサポート）が使える状態になります。
 

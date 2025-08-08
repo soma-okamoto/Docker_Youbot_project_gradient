@@ -1,0 +1,8 @@
+joint:
+  names: [pan, tilt]
+motion:
+  names: [close]
+  close:
+    step: [-0.5, -0.5]  # radian
+    time_from_start: 1.0  # sec
+

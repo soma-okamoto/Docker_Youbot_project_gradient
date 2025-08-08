@@ -1,0 +1,14 @@
+<launch>
+
+    <!-- シミュレーション時間を購読 -->
+  <param name="use_sim_time" value="true"/>
+  <!-- map→odom の TF も自動で出力 -->
+  <param name="provide_odom_frame" value="true"/>
+  <!-- マップを 1 秒ごとに配信 -->
+  <param name="map_publish_period" value="1.0"/>
+
+  <node pkg="slam_toolbox" type="async_slam_toolbox_node" name="slam_toolbox" output="screen">
+    <rosparam command="load" file="$(find slam_toolbox)/config/mapper_params_online_async.yaml" />
+  </node>
+
+</launch>

@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install -y \
       ros-noetic-interactive-markers\
       libceres1\
       ros-noetic-teb-local-planner\
+      dos2unix \
 
     && rm -rf /var/lib/apt/lists/*
 

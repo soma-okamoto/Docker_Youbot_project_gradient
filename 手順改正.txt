@@ -1,12 +1,3 @@
-#手順
-Xlounch　を起動する
------------------XLaunchsetting----------
-Display Number =0
-（Native OpenGL）
-accell
-
-XLaunchを起動⇒Dockerrun
-
 
 
 # 1) Docker_ReachabilityMapターミナル
@@ -24,36 +15,43 @@ docker run -d --name esaki_youbot -p 9092:9090 -v C:\Users\soma0\Esaki_youboot:/
 docker exec -it esaki_youbot bash
 
 
+#手順
+Ubuntuのターミナルで
 # 1) youboot_simターミナル
-cd youbot_sim_docker
-$env:DISPLAY="host.docker.internal:0.0"
-docker rm -f youbot_ros
-docker run --gpus all -d --name youbot_ros `
-  -e DISPLAY=$env:DISPLAY `
-  -e QT_X11_NO_MITSHM="1" `
+docker rm -f youbot_ros 2>/dev/null
+docker run --gpus all -d --name youbot_ros \
+  -e DISPLAY=$DISPLAY \
+  -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
+  -e XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
+  -e PULSE_SERVER=${PULSE_SERVER:-unix:${XDG_RUNTIME_DIR}/pulse/native} \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY \
+  -v $XDG_RUNTIME_DIR/pulse:$XDG_RUNTIME_DIR/pulse \
+  -v /mnt/wslg:/mnt/wslg \
+  -v /usr/lib/wsl:/usr/lib/wsl:ro \
+  -e LD_LIBRARY_PATH=/usr/lib/wsl/lib \
   youbot_ros tail -f /dev/null
 
 docker exec -it youbot_ros bash
 
 
+# 実行（WSLg 連携）
+docker rm -f gazebo_dev 2>/dev/null
+docker run --gpus all -d --name gazebo_dev \
+  -e DISPLAY=$DISPLAY \
+  -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
+  -e XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
+  -e PULSE_SERVER=${PULSE_SERVER:-unix:${XDG_RUNTIME_DIR}/pulse/native} \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY \
+  -v $XDG_RUNTIME_DIR/pulse:$XDG_RUNTIME_DIR/pulse \
+  -v /mnt/wslg:/mnt/wslg \
+  -v /usr/lib/wsl:/usr/lib/wsl:ro \
+  -v "$HOME/edit_gazebo":/root \
+  -e LD_LIBRARY_PATH=/usr/lib/wsl/lib \
+  gazebo_dev tail -f /dev/null
 
-# 1) sim_devターミナル
-cd Docker_sim
-$env:DISPLAY="host.docker.internal:0.0"
-docker rm -f sim_dev
-docker run --gpus all -d --name sim_dev `
-  -e DISPLAY=$env:DISPLAY `
-  -e QT_X11_NO_MITSHM="1" `
-  -v C:\Users\soma0\Docker_sim:/root `
-  sim_dev tail -f /dev/null
-
-docker exec -it sim_dev bash
-
-cd catkin_ws
-source /opt/ros/noetic/setup.bash
-source /root/catkin_ws/devel/setup.bash
-
-
+docker exec -it gazebo_dev bash
 
 
 
@@ -64,8 +62,9 @@ docker network create rosnet
 
 docker network connect rosnet ros_dev
 docker network connect rosnet youbot_ros
-docker network connect rosnet sim_dev
 docker network connect rosnet esaki_youbot
+docker network connect rosnet gazebo_dev
+
 
 #########################################################
 
@@ -91,23 +90,12 @@ source devel/setup.bash
 export ROS_MASTER_URI=http://ros_dev:11311
 export ROS_HOSTNAME=ros_dev 
 
-sudo apt-get update && sudo apt-get install -y dos2unix
-dos2unix DetectTarget.py
-
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
   --wout=0.21,0.58,0.21
 
 rosrun detect_pkg Bottle_info_Save_to_CSV.py
 
-cd ReIR_ws
-source devel/setup.bash
-export ROS_MASTER_URI=http://ros_dev:11311
-export ROS_HOSTNAME=ros_dev 
-
-dos2unix Get_RL_neccesary_data.py
-dos2unix reward.py
-rosrun RIR_pkg2 Get_RL_neccesary_data.py
 
 
 # 2) Esaki_youbootターミナル
@@ -140,6 +128,13 @@ source /root/catkin_ws/devel/setup.bash
 
 
 
+FILE=$(rospack find youbot_description)/urdf/youbot_arm/arm.urdf.xacro
+cp "$FILE" "${FILE}.bak"
+perl -0777 -pe '
+  s#(<joint name="\$\{name\}_joint_1".*?<dynamics )damping="[^"]+" friction="[^"]+"#${1}damping="0.0" friction="0.0"#s;
+  s#(<joint name="\$\{name\}_joint_1".*?<limit )effort="[^"]+"#${1}effort="120"#s;
+' -i "$FILE"
+
 
 grep -rl 'xacro.py' ~/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
 
@@ -151,19 +146,16 @@ roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=boxed_walls_10x10
 
 rosrun rviz rviz
 
-
-# 2) sim_devターミナル
+# 2) gazeboターミナル
 export ROS_MASTER_URI=http://ros_dev:11311
-export ROS_HOSTNAME=sim_dev 
+export ROS_HOSTNAME=gazebo_dev 
 source /opt/ros/noetic/setup.bash
-source /root/catkin_ws/devel/setup.bash
+source /root/devel/setup.bash
 
+grep -rl 'xacro.py' ~/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
 
-nvidia-smi
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch
 
-
-
-
-
-
-
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=empty_world
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=tower_of_hanoi
+roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=robocup_at_work_2012

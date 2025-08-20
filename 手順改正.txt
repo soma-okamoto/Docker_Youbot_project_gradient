@@ -96,6 +96,15 @@ rosrun detect_pkg DetectTarget.py \
 
 rosrun detect_pkg Bottle_info_Save_to_CSV.py
 
+cd ReIR_ws
+source devel/setup.bash
+export ROS_MASTER_URI=http://ros_dev:11311
+export ROS_HOSTNAME=ros_dev 
+
+dos2unix Get_RL_neccesary_data.py
+dos2unix reward.py
+rosrun RIR_pkg2 Get_RL_neccesary_data.py
+
 
 
 # 2) Esaki_youbootターミナル
@@ -113,12 +122,19 @@ rosrun esaki_youbot_project_gradient Bridge_Simulation_gripper.py
 rosrun esaki_youbot_project_gradient gripper.py
 
 
+
 roslaunch esaki_slam youbot_move_base.launch
 roslaunch slam_toolbox online_async.launch 
 
 rosrun esaki_youbot_project_gradient Origin_move_pub.py 
 
 rosrun esaki_youbot_project_gradient IRM_youbot_baseMove.py
+
+
+
+chmod +x ~/catkin_ws/src/esaki_youbot_project_gradient/src/qp_posture_servo.py
+sed -i 's/\r$//' ~/catkin_ws/src/esaki_youbot_project_gradient/src/qp_posture_servo.py
+roslaunch esaki_youbot_project_gradient youbot_bringup.launch
 
 # 2) youboot_simターミナル
 export ROS_MASTER_URI=http://ros_dev:11311
@@ -127,15 +143,17 @@ source /opt/ros/noetic/setup.bash
 source /root/catkin_ws/devel/setup.bash
 
 
+cd src/youbot_description/urdf/youbot_arm
+nano arm.urdf.xacro
 
-FILE=$(rospack find youbot_description)/urdf/youbot_arm/arm.urdf.xacro
-cp "$FILE" "${FILE}.bak"
-perl -0777 -pe '
-  s#(<joint name="\$\{name\}_joint_1".*?<dynamics )damping="[^"]+" friction="[^"]+"#${1}damping="0.0" friction="0.0"#s;
-  s#(<joint name="\$\{name\}_joint_1".*?<limit )effort="[^"]+"#${1}effort="120"#s;
-' -i "$FILE"
+ <limit effort="${12}" velocity="${9.5*2/M_PI}" lower="0" upper="${joint_1_limit}"/>
+                        <!--effort - N, N*m-->
+                        <!--velocity - m/s, rad/s-->
+                        <safety_controller k_position="20" k_velocity="${50}" 
 
 
+
+cd catkin_ws
 grep -rl 'xacro.py' ~/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
 
 roslaunch youbot_gazebo_robot youbot.launch

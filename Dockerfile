@@ -35,7 +35,10 @@ RUN apt-get update && apt-get install -y \
       libceres1\
       ros-noetic-teb-local-planner\
       dos2unix \
-
+      ros-noetic-xacro \
+      ros-noetic-robot-state-publisher \
+      ros-noetic-kdl-parser-py \
+      python3-pykdl \
     && rm -rf /var/lib/apt/lists/*
 
 # rosdep 初期化

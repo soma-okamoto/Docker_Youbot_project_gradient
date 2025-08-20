@@ -1,0 +1,33 @@
+<launch>
+  <!-- /robot_description（rsp用） -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro --inorder $(find youbot_description)/robots/youbot.urdf.xacro"/>
+
+  <!-- /youbot_description（あなたのノード用） -->
+  <param name="youbot_description"
+         command="$(find xacro)/xacro --inorder $(find youbot_description)/robots/youbot.urdf.xacro"/>
+
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
+    <param name="publish_frequency" value="50.0"/>
+  </node>
+
+  <node pkg="esaki_youbot_project_gradient" type="qp_posture_servo.py" name="qp_posture_servo" output="screen">
+    <param name="base_link" value="arm_1_base_link"/>
+    <param name="tip_link"  value="arm_1_gripper_tip"/>
+    <param name="command_topic" value="/arm_1/arm_controller/command"/>
+    <param name="joint_names" value="['arm_joint_1','arm_joint_2','arm_joint_3','arm_joint_4','arm_joint_5']"/>
+    <param name="ori_policy" value="lookat_bottle"/>
+    <param name="look_axis" value="x"/>
+    <param name="bottle_axis" value="z"/>
+    <param name="k_pos" value="1.0"/>
+    <param name="k_ori" value="1.0"/>
+    <param name="damping" value="0.03"/>
+    <param name="null_k" value="0.6"/>
+    <param name="w_center" value="1.0"/>
+    <param name="w_limit"  value="0.3"/>
+    <param name="w_manip"  value="0.4"/>
+    <param name="w_pre"    value="0.0"/>
+    <param name="pregrasp_offset" value="0.07"/>
+    <param name="manip_fd_period" value="5"/>
+  </node>
+</launch>

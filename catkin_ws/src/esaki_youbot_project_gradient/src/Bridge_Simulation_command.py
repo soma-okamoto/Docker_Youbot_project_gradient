@@ -14,7 +14,7 @@ class BridgeSimulationCommand:
 
         # --- Arm1 command conversion ---
         self.pub_arm1 = rospy.Publisher(
-            '/arm_1/arm_controller/command',
+            '/youbot/arm_1/arm_controller/command',
             JointTrajectory,
             queue_size=1
         )
@@ -26,7 +26,7 @@ class BridgeSimulationCommand:
 
         # --- Arm2 command conversion ---
         self.pub_arm2 = rospy.Publisher(
-            '/arm_2/arm_controller/command',
+            '/youbot/arm_2/arm_controller/command',
             JointTrajectory,
             queue_size=1
         )
@@ -36,42 +36,7 @@ class BridgeSimulationCommand:
             self.cb_arm2
         )
 
-        # # --- Gripper stub service for simulation ---
-        # rospy.Service(
-        #     '/dynamixel_workbench/dynamixel_command',
-        #     DynamixelCommand,
-        #     self.handle_dynamixel_stub
-        # )
-        # rospy.Service(
-        #     '/dynamixel_workbench/execution',
-        #     GripperCmd,
-        #     self.handle_gripper_cmd
-        # )
 
-        # # Publishers for simulation gripper trajectory
-        # self.pub_gripper1 = rospy.Publisher(
-        #     '/arm_1/gripper_controller/command',
-        #     JointTrajectory,
-        #     queue_size=1
-        # )
-        # self.pub_gripper2 = rospy.Publisher(
-        #     '/arm_2/gripper_controller/command',
-        #     JointTrajectory,
-        #     queue_size=1
-        # )
-
-        # # Subscribe joint_states to mimic gripper_state publishing
-        # self.pub_state = rospy.Publisher('/gripper_state', Bool, queue_size=10)
-        # rospy.Subscriber(
-        #     '/joint_states',
-        #     JointState,
-        #     self.torque_cb,
-        #     queue_size=10
-        # )
-
-        # # Open/close positions (param or default)
-        # self.open_pos  = rospy.get_param('~open_positions', [0.04, 0.04])
-        # self.close_pos = rospy.get_param('~close_positions', [0.0, 0.0])
 
         rospy.loginfo('bridge_simulation_command ready')
         rospy.spin()

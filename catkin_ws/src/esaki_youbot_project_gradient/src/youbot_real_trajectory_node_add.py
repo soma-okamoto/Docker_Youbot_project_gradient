@@ -22,7 +22,6 @@ arm_1_topic_name = "arm_1/arm_controller/position_command"
 arm_1_msg_type = JointPositions
 grip_1_topic_name = "arm_1/gripper_controller/position_command"
 grip_1_msg_type = JointPositions
-
 joint_uri_1 = ['arm_joint_1','arm_joint_2','arm_joint_3','arm_joint_4','arm_joint_5','gripper_finger_joint_l','gripper_finger_joint_r']
 
 # Turn a desired gripper opening into a brics_actuator-friendly message
@@ -66,11 +65,83 @@ def make_arm_msg(arm_js, joint_uri):
     
     return jp
 
+
+
+def move_arm_1(cmd):
+  # Create a publisher to arm controller
+  arm_command_publisher = rospy.Publisher(arm_1_topic_name, arm_1_msg_type, queue_size = 5)
+
+  # setup the loop rate for the node
+  r = rospy.Rate(10) # 10hz
+  
+  # Make sure you put in valid joint states or bad things happen
+  arm_cmd = make_arm_msg(cmd, joint_uri_1)
+  # Initialize the timer for arm publisher
+  time = rospy.get_rostime()
+  t0 = time.secs
+  while not rospy.is_shutdown():
+      rospy.loginfo("moving arm")
+      arm_command_publisher.publish(arm_cmd)
+      r.sleep()
+      time = rospy.get_rostime() 
+      t1 = time.secs
+      if (t1-t0) > 1:
+        break
+
+
+
+def move_arms(cmd_1):
+  # Create a publisher to arm controller
+  arm_1_command_publisher = rospy.Publisher(arm_1_topic_name, arm_1_msg_type, queue_size = 5)
+  # setup the loop rate for the node
+  r = rospy.Rate(10) # 10hz
+  
+  # Make sure you put in valid joint states or bad things happen
+  arm_1_cmd = make_arm_msg(cmd_1, joint_uri_1)
+  # Initialize the timer for arm publisher
+  while not rospy.is_shutdown():
+      rospy.loginfo("moving arms")
+      arm_1_command_publisher.publish(arm_1_cmd)
+
+
+
+# ***MAIN FUNCTION***
+def youbot_exec(arm_1_topic_name, arm_1_msg_type, grip_1_topic_name, grip_1_msg_type):
+
+  # Initialize rospy
+  rospy.init_node('youbot_trajectory_publisher',
+                  anonymous=False)
+
+  pose_sub = rospy.Subscriber("palm_pose",PoseStamped,move_callback)
+  pose = PoseStamped()
+
+
+  while not rospy.is_shutdown(): 
+      pose_holo = [pose.pose.position.x,pose.pose.position.y,pose.pose.position.z+0.3]
+      theta_0 = math.pi/2 - Theta0(pose_holo[1],pose_holo[0])
+      if theta_0 >= math.pi/2 + 0.5:
+        theta_0 = math.pi/2 + 0.5
+      print(pose_holo)
+      cand = [theta_0,0,0,0,0]
+      move_arms(cand)
+
+
+
+def Theta0(x,y):
+    if x == 0 and y == 0:
+        theta_0 = 0
+    theta_0 = math.atan2(x,y)
+    return theta_0
+
 def move_callback(msg):
     global pose
+    #rospy.loginfo("Message '{}' recieved".format(msg.pose.position))
     pose = msg
 
+
+
 def move_subscriber():
+
     rospy.Subscriber("palm_pose",PoseStamped,move_callback)
 
 
@@ -128,6 +199,7 @@ def inversekinematics(L,pd,p0,ramda):
     p_fk = fk(L,p0[0],p0[1],p0[2])
     v = velocity(pd,p_fk)
 
+
     J = jacobian(L,p0[0],p0[1],p0[2])
 
     i = np.identity(3)
@@ -148,11 +220,18 @@ def inversekinematics(L,pd,p0,ramda):
 import tf
 
 def quaternion_to_euler(quaternion):
+    """Convert Quaternion to Euler Angles
+
+    quarternion: geometry_msgs/Quaternion
+    euler: geometry_msgs/Vector3
+    """
 
     e = tf.transformations.euler_from_quaternion((quaternion[0], quaternion[1], quaternion[2], quaternion[3]))
     euler = [e[0],e[1],e[2]]
 
     return euler
+
+
 
 def DegToRad(th):
     rad = (np.pi/180)*th
@@ -163,10 +242,11 @@ def RadToDeg(th):
     return Deg
 
 
-
+import csv
+import datetime
 if __name__ == '__main__':
 
-
+    #pd = [0.404,0.3-0.147,0]
     pd = [1.419,0.318-0.147,0]
     p0 = [0.1,0.2,0.3]
     L = [0.155,0.135,0.218]
@@ -209,6 +289,7 @@ if __name__ == '__main__':
         time_sta = time.time()
 
         arm_1_command_publisher = rospy.Publisher(arm_1_topic_name, arm_1_msg_type, queue_size = 5)
+ 
 
         arm_1_joint_publisher = rospy.Publisher('/arm_joint_command', Float32MultiArray, queue_size=10)
 
@@ -222,7 +303,8 @@ if __name__ == '__main__':
 
         pose_test = [0.419,0.318-0.147,r[1]*4]
         pose_3d = [pose_xy,pose_z,DegToRad(90)]
-
+        #print(pose_3d)
+        
 
         ramda = 1 
         
@@ -258,21 +340,76 @@ if __name__ == '__main__':
 
         if(theta_0 < DegToRad(15)):
             theta_0 = DegToRad(15)
-
-
+    
         cand = [theta_0,DegToRad(65)- theta[0] ,-DegToRad(146) - theta[1],DegToRad(102.5) - theta[2],DegToRad(167.5) ]
-        # print(cand)
+        print(cand)
         cand_deg = [RadToDeg(theta_0) ,RadToDeg(theta[0]),RadToDeg(theta[1]),RadToDeg(theta[2]),RadToDeg(cand[4])]
 
         arm1_joint_pub = Float32MultiArray(data=cand_deg)
         arm_1_joint_publisher.publish(arm1_joint_pub)
 
         
-
         arm_1_cmd = make_arm_msg(cand, joint_uri_1)
         arm_1_command_publisher.publish(arm_1_cmd)
+
 
         rate.sleep()
         time_end = time.time()
 
         tim = time_end- time_sta
+
+        test_pub = rospy.Publisher("test_pose",PoseStamped,queue_size = 5)
+
+        test = fk(L,theta[0],theta[1],theta[2])
+        test_pose = PoseStamped()
+
+
+        test_pose.pose.position.x ,test_pose.pose.position.y,test_pose.pose.position.z = test[0]*np.cos(Theta0(pose_holo[1],pose_holo[0])),test[0]*np.sin(Theta0(pose_holo[1],pose_holo[0])),test[1]-0.2
+
+        test_pub.publish(test_pose)
+   
+
+
+def plan_grasp_targets(bottle_xyz, q_curr, L):
+    """
+    入力:
+      bottle_xyz: [bx, by, bz]  世界（ベース）座標  /identified_bottle_pose"をサブスクライブする
+      q_curr:     [q1..q5]      現在関節角（rad）
+      L:          アーム各リンク長 [L1,L2,L3]
+    出力:
+      target_pose_3d: [radius, z, phi]  (元コードの IK 入力形式)
+      stage: "APPROACH" | "ALIGN" | "INSERT"
+    """
+    bx, by, bz = bottle_xyz
+
+    # 半径 r と 高さ z を生成（元の fk/jacobian に合わせて半径・高さで制御）
+    r_goal = math.sqrt(bx*bx + by*by)
+    z_goal = bz + GRASP_CLEAR_Z
+
+    # 現在の末端(半径,高さ,合成角) を forward kinematics で推定
+    p_curr = fk(L, q_curr[1], q_curr[2], q_curr[3])  # [radius, height, theta] 相当
+    r_now, z_now, phi_now = p_curr
+
+    # ステージ判定
+    if abs(r_now - r_goal) > (STANDOFF_R + INSERT_THRESH_R):
+        # まだ横方向に遠い → STANDOFF まで寄る（姿勢は変えない）
+        r_tgt  = max(r_goal - STANDOFF_R, 0.0)
+        z_tgt  = z_goal
+        phi_tgt = phi_now  # いきなり姿勢を変えない
+        stage  = "APPROACH"
+    elif abs(z_now - z_goal) > INSERT_THRESH_Z:
+        # 横はOK → 高さを合わせる（姿勢はまだ固定しない）
+        r_tgt  = r_now
+        z_tgt  = z_goal
+        phi_tgt = phi_now
+        stage  = "ALIGN"
+    else:
+        # 最終突入 → 半径を目標に寄せながら姿勢を“つかめる角度”へ
+        r_tgt  = r_goal
+        z_tgt  = z_goal
+        phi_tgt = math.radians(YAW_LOCK_DEG)       # 例: 水平方向にグリッパ
+        # 角度誤差は wrap
+        phi_tgt = phi_now + angle_wrap(phi_tgt - phi_now)
+        stage  = "INSERT"
+
+    return [r_tgt, z_tgt, phi_tgt], stage

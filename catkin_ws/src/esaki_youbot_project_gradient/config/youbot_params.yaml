@@ -1,0 +1,67 @@
+# youbot_params.yaml
+# youBot arm (5DoF) 用の既定パラメータ
+
+# KDLチェーン端点
+base_link: "arm_1_base_link"
+tip_link:  "arm_1_gripper_tip"
+
+# ジョイント名（/joint_states の name と一致させる）
+joint_names: ['arm_joint_1','arm_joint_2','arm_joint_3','arm_joint_4','arm_joint_5']
+
+# youBot 標準の関節リミット（rad）
+# 参考: 約 [±169°,  (-65°, +90°),  (-151°, +146°),  (±102.5°),  (±165°)]
+q_min: [-2.9496, -1.1345, -2.6354, -1.7889, -2.8798]
+q_max: [ 2.9496,  1.5708,  2.5482,  1.7889,  2.8798]
+
+# コマンド先トピック（あなたの環境に合わせて）
+command_topic: "/arm_1/arm_controller/command"
+
+# サーボ・DLSゲイン
+k_pos:   1.0
+k_ori:   1.0
+damping: 0.03
+null_k:  0.6
+
+# 姿勢（EE）をボトル基準で作る
+ori_policy: "lookat_bottle"   # "hold" | "fixed" | "lookat_bottle" | "align_bottle_axis"
+look_axis: "x"                 # EEのどの軸を向けるか
+bottle_axis: "z"               # ボトルの基準軸（align時）
+
+# “ヌルスペース”の目的関数ウェイト（youBot向けの初期値）
+w_center: 1.2     # “型”への引き戻し：少し強め
+w_limit:  0.5     # 関節端回避：やや強め（youBotは端で固くなりがち）
+w_manip:  0.5     # 可操作度：特異姿勢に寄りにくく
+w_pre:    0.0     # 前把持は最初オフ。必要なら 0.1–0.3
+
+# 有限差分の周期（負荷と相談）
+manip_fd_period: 6
+
+# 前把持（オプション使用時）
+pregrasp_offset: 0.07
+
+# “型”(posture) の生成を youBot に最適化
+posture_mode: "state_dep"         # "static_center" or "state_dep"
+
+# youBot向けの“型”のプリセット（任意のヒント姿勢）
+# 例：自然な構え（軽く前屈み・肘やや曲げ）
+q_posture_hint: [0.0, -0.2, -1.2, 0.6, 0.0]
+
+# ベースをボトル方向へ向ける強さ（joint1）
+posture_alpha_face: 0.8
+
+# 肘（joint3）の好み（軽く前に出す）
+elbow_prefer_angle: -1.1
+elbow_gain: 1.0
+
+# 肩（joint2）を対象高さに応じて上下
+shoulder_gain: 0.9
+shoulder_ref_z: 0.10
+shoulder_bias: 0.0
+
+# 手首（joint4,5）
+# wrist_pitch_pref:    # 空欄(None)なら自動連動
+wrist_roll_pref: 0.0
+
+# ノードのレート・出力インターバル
+rate_hz: 100.0
+dt_cmd:  0.10

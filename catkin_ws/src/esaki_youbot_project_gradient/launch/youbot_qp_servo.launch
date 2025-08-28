@@ -1,0 +1,20 @@
+<launch>
+  <!-- youBot URDF/xacro を /robot_description と /youbot_description の両方へ展開 -->
+  <param name="robot_description"
+         command="$(find xacro)/xacro $(find youbot_description)/robots/youbot.urdf.xacro"/>
+  <param name="youbot_description"
+         command="$(find xacro)/xacro $(find youbot_description)/robots/youbot.urdf.xacro"/>
+
+  <!-- TF配信（/robot_description を参照） -->
+  <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" output="screen">
+    <param name="publish_frequency" value="50.0"/>
+  </node>
+
+  <!-- QPサーボノード（youBot用パラメータをYAMLから注入） -->
+  <rosparam file="$(find esaki_youbot_project_gradient)/config/youbot_params.yaml" command="load" ns="qp_posture_servo"/>
+
+  <node pkg="esaki_youbot_project_gradient" type="qp_posture_servo.py" name="qp_posture_servo" output="screen">
+    <!-- ここでは個別上書きも可能（例：試しにw_preを上げたい場合など） -->
+    <!-- <param name="w_pre" value="0.2"/> -->
+  </node>
+</launch>

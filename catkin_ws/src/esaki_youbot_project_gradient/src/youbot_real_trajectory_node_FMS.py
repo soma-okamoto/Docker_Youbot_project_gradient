@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-youbot_real_trajectory_node_full_reconfig.py  (with Backoff-Realign-Approach FSM)
-
 機能:
 - ユーザー手 (palm_pose) に追従（主タスク：DLS IK）
 - ボトルのプレグラスプ姿勢を常時生成し、距離に応じて手→プレグラスプへ滑らかに吸着
 - ヌル空間で 可操作性↑ + 関節リミット余裕↑ + プレグラスプ関節θ_preへの弱い引き戻し
 - 「近距離で姿勢が悪い」時に、いったん後退→姿勢再整列→再接近の FSM を実行
-- 実機角マッピング（元コード踏襲）して Publish
 """
 
 import copy

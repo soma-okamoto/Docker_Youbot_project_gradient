@@ -55,7 +55,7 @@ D_OUT  = 0.22            # 吸着解除距離（以上で解除）
 SIG_K  = 40.0            # シグモイド鋭さ
 BETA_SMOOTH = 0.2        # βの滑らか化係数
 
-# ===== 退避→再整列→再接近 FSM パラメータ =====
+# ===== 退避→再整列→再接近 FSM パラメータ ===========================================================
 class Phase(Enum):
     TRACK   = 0   # 通常追従/プレグラスプ吸着
     BACKOFF = 1   # 後退（スタンドオフへ）
@@ -69,7 +69,7 @@ IMPROVE_H_MIN   = 0.08   # H 改善の目安
 CD_SWITCH       = 0.5    # [s] 状態切替のクールダウン
 APPROACH_LOCK_BETA = True  # 再接近時は beta≈1.0 に固定（向きの安定化）
 
-# ================== ユーティリティ ==================
+# ================== ユーティリティ =================================================================
 def DegToRad(th): return (np.pi/180.0)*th
 def RadToDeg(th): return (180.0/np.pi)*th
 
@@ -209,6 +209,7 @@ def merit_function(th, L):
     return W_MANI * manipulability(J) + W_LIMIT * limit_margin_cost(th)
 
 def finite_diff_grad(f, th, L, h=1e-3):
+    #勾配計算
     g = np.zeros(3, dtype=np.float64)
     base = f(th, L)
     for i in range(3):
@@ -222,7 +223,7 @@ def nullspace_projector(J):
     I = np.eye(3)
     return I - J_pinv @ J
 
-# ===== プレグラスプ生成 & ブレンド =====
+# ===== プレグラスプ生成 & ブレンド =================================================================
 def make_pregrasp_from_bottle(bxyz, approach_yaw_deg=YAW_LOCK_DEG, offset=PREGRASP_OFFSET):
     """bxyz=[x,y,z]。r方向に offset 手前で yaw固定"""
     bx, by, bz = bxyz
@@ -249,10 +250,11 @@ def merit_pregrasp_aug(th, L, th_pre=None):
     base = merit_function(th, L)
     extra = 0.0
     if th_pre is not None:
+        #Pregraspがあったら
         extra += 0.3 * (- np.sum((th - th_pre)**2))  # 弱い引き戻し
     return base + extra
 
-# ================== 購読コールバック ==================
+# ================== 購読コールバック =========================================================================
 palm_pose   = PoseStamped()
 bottle_xyz  = np.zeros(3, dtype=np.float64)
 
@@ -268,7 +270,7 @@ def bottle_cb(msg):
         bottle_xyz[1] = float(msg.data[1])
         bottle_xyz[2] = float(msg.data[2])
 
-# ================== メイン ==================
+# ================== メイン ========================================================================================================
 if __name__ == '__main__':
     rospy.init_node('youbot_trajectory_publisher')
 
@@ -304,6 +306,8 @@ if __name__ == '__main__':
     joint_pub_deg = rospy.Publisher("/arm_joint_command", Float32MultiArray, queue_size=10)
 
     metrics_pub = rospy.Publisher("/ybt_metrics", Float32MultiArray, queue_size=20)
+    phase_names_pub   = rospy.Publisher("/phase_name", String, queue_size=1, latch=True)
+
     names_pub   = rospy.Publisher("/ybt_metric_names", String, queue_size=1, latch=True)
     names_pub.publish(String(data="t,dist,beta,e_task,sigma_min,cond,mani,margin0,margin1,margin2,H,dH_null,Jdnull_norm,dnull_norm,de_due_null,phase"))
     t0 = rospy.get_time()
@@ -331,6 +335,7 @@ if __name__ == '__main__':
 
         # ---- プレグラスプ生成＆ブレンド ----
         if np.linalg.norm(bottle_xyz) > 1e-6:
+            #ボトル座標が入ったら
             pre_rzp = make_pregrasp_from_bottle(bottle_xyz)
             # 平面距離（手→ボトル）
             dist = math.sqrt((pose_holo[0]-bottle_xyz[0])**2 + (pose_holo[1]-bottle_xyz[1])**2)
@@ -353,6 +358,7 @@ if __name__ == '__main__':
 
         # BACKOFF 中は退避スタンドオフをターゲットにする
         if phase == Phase.BACKOFF and stand_rzp is not None:
+            #backoffのターゲット
             target_rzp = stand_rzp
 
         # ---- プレグラスプ関節 θ_pre を計算（軽量IK） ----
@@ -419,39 +425,47 @@ if __name__ == '__main__':
         bad_posture = (sigma_min_now < SIGMA_MIN_THR) or (cond_now > COND_MAX_THR) or (m_min < MARGIN_MIN_THR)
 
         if phase == Phase.TRACK:
+            Phase_name="TRACK"
             if cooldown_ok and near and bad_posture:
                 # 後退目標（スタンドオフ）を用意（rを手前に）
                 r_stand = pre_rzp[0] + BACKOFF_D
                 stand_rzp = [r_stand, pre_rzp[1], pre_rzp[2]]
                 phase = Phase.BACKOFF
                 last_switch_t = now
+                Phase_name="BACKOFF"
 
         elif phase == Phase.BACKOFF:
             # スタンドオフに十分近づいたら REALIGN へ
             cur_rzp = fk(L, theta0, theta1, theta2)
             err_bo = math.hypot(stand_rzp[0]-cur_rzp[0], stand_rzp[1]-cur_rzp[1])
+            Phase_name="BACKOFF"
             if err_bo < 0.01:
                 phase = Phase.REALIGN
                 realign_start_t = now
                 H_baseline = H_after
                 last_switch_t = now
+                Phase_name="REALIGN"
 
         elif phase == Phase.REALIGN:
             improved = (H_after - H_baseline) > IMPROVE_H_MIN
             timeout = (now - realign_start_t) > REALIGN_DT_MAX
             criteria_ok = (sigma_min_now >= SIGMA_MIN_THR*1.2) and (cond_now <= COND_MAX_THR*0.8) and (m_min >= MARGIN_MIN_THR)
+            Phase_name="REALIGN"
             if cooldown_ok and (improved or timeout or criteria_ok):
                 phase = Phase.APPROACH
                 last_switch_t = now
+                Phase_name="APPROACH"
 
         elif phase == Phase.APPROACH:
             # ふたたび通常のブレンドターゲットへ（βは固定済みの可能性あり）
             cur_rzp = fk(L, theta0, theta1, theta2)
             err_ap = math.hypot(target_rzp[0]-cur_rzp[0], target_rzp[1]-cur_rzp[1])
+            Phase_name="APPROACH"
             # 目標に十分近づいたら TRACK に戻る
             if err_ap < 0.01:
                 phase = Phase.TRACK
                 last_switch_t = now
+                Phase_name="TRACK"
 
         # ---- ベース方位 & 実機角マッピング（元コード踏襲） ----
         theta_base = DegToRad(169/2) - Theta0(pose_holo[1], pose_holo[0])
@@ -478,7 +492,12 @@ if __name__ == '__main__':
             float(Jdnull_norm), float(dnull_norm), float(de_due_null),
             phase_id
         ]
+     
+
         metrics_pub.publish(Float32MultiArray(data=metrics))
+
+        phase_names_pub.publish(String(Phase_name))
+
         joint_pub_deg.publish(Float32MultiArray(data=cand_deg))
         arm_cmd_pub.publish(make_arm_msg(cand, joint_uri_1))
 

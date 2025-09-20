@@ -7,6 +7,9 @@ from std_msgs.msg                 import Bool
 from sensor_msgs.msg              import JointState
 from dynamixel_workbench_msgs.srv import DynamixelCommand, DynamixelCommandResponse
 from dynamixel_workbench_operators.srv import GripperCmd, GripperCmdResponse
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
+
 
 class BridgeSimulationCommand:
     def __init__(self):
@@ -36,6 +39,32 @@ class BridgeSimulationCommand:
             self.cb_arm2
         )
 
+         # --- Base command conversion ---
+        self.pub_base = rospy.Publisher(
+            '/youbot/cmd_vel',
+            Twist,
+            queue_size=10
+        )
+        rospy.Subscriber(
+           '/cmd_vel',         # 必要に応じて remap
+            Twist,
+            self.cb_base,
+            queue_size=10
+        )
+
+         # --- odom command conversion ---
+        self.pub_odom = rospy.Publisher(
+            '/odom',
+            Odometry,
+            queue_size=10
+        )
+        rospy.Subscriber(
+           '/youbot/odom',         # 必要に応じて remap
+            Odometry,
+            self.cb_odom,
+            queue_size=10
+        )
+
 
 
         rospy.loginfo('bridge_simulation_command ready')
@@ -51,6 +80,16 @@ class BridgeSimulationCommand:
         traj = self.to_trajectory(msg.positions)
         self.pub_arm2.publish(traj)
         rospy.loginfo('[BridgeCmd] Published sim arm2 trajectory')
+
+    def cb_base(self, msg):
+        # そのまま中継（必要ならゲイン・軸変換などをここで）
+        self.pub_base.publish(msg)
+        rospy.loginfo('[BridgeCmd] Published sim base_cmd')
+
+    def cb_odom(self, msg: Odometry):
+        # 必要なら frame_id の正規化などをここで
+        self.pub_odom.publish(msg)
+        rospy.loginfo('[BridgeCmd] Published sim odom_cmd')
 
     def to_trajectory(self, positions):
         # Convert JointPositions to JointTrajectory with correct joint names

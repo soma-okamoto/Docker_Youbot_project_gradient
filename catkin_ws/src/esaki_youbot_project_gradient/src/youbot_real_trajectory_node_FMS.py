@@ -6,6 +6,8 @@
 - ボトルのプレグラスプ姿勢を常時生成し、距離に応じて手→プレグラスプへ滑らかに吸着
 - ヌル空間で 可操作性↑ + 関節リミット余裕↑ + プレグラスプ関節θ_preへの弱い引き戻し
 - 「近距離で姿勢が悪い」時に、いったん後退→姿勢再整列→再接近の FSM を実行
+
+FMS
 """
 
 import copy
@@ -19,7 +21,7 @@ from brics_actuator.msg import JointPositions, JointValue
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Float32MultiArray,String
 
-# ================== 設定 / 定数 ==================
+# ================== 設定 / 定数 =================================================================
 arm_1_topic_name  = "arm_1/arm_controller/position_command"
 arm_1_msg_type    = JointPositions
 joint_uri_1       = ['arm_joint_1','arm_joint_2','arm_joint_3','arm_joint_4','arm_joint_5',

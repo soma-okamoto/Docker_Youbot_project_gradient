@@ -62,8 +62,9 @@
     <param name="clearing_rotation_allowed" value="false" />
     <param name="recovery_behavior_enabled" value="false" />
     <remap from="scan" to="/youbot/scan"/>
-    <!-- <remap from="map" to="/youbot/map"/> -->
-    <!-- <remap from="cmd_vel" to="/youbot/cmd_vel"/> -->
+    
+    <remap from="map" to="/youbot/map"/>
+    <remap from="cmd_vel" to="/youbot/cmd_vel"/>
   </node>
   <!-- </group> -->
 

@@ -41,6 +41,13 @@ RUN apt-get update && apt-get install -y \
       python3-pykdl \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip3 install --upgrade pip \
+ && pip3 install --no-cache-dir open3d \
+ && pip3 install --no-cache-dir "numpy==1.24.4" --upgrade --ignore-installed
+
+
+# ------- ここまで -------
+
 # rosdep 初期化
 RUN rosdep init \
  && rosdep update

@@ -74,9 +74,9 @@ def DegToRad(th):
 
 if __name__ == '__main__':
 
-    q1 = -DegToRad(-90)+DegToRad(169)
-    #q1 = -DegToRad(-60)+DegToRad(169)
-    #q2 = DegToRad(50)+DegToRad(65)
+    # q1 = -DegToRad(-90)+DegToRad(169)
+    q1 = -DegToRad(-60)+DegToRad(169)
+    # q2 = DegToRad(50)+DegToRad(65)
     q2 = DegToRad(70)+DegToRad(65)
     q3 = DegToRad(-110)-DegToRad(146)
     q4 = DegToRad(-60)+DegToRad(102.5)

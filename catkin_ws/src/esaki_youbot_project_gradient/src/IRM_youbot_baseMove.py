@@ -54,6 +54,11 @@ class IRMEditRouteExecutor:
             while not rospy.is_shutdown():
                 # 1) 現在のロボット位置・方位を取得
                 trans = self.lookup_transform(self.frame_map, self.frame_base)
+                if trans is None:
+                    # TF がまだ来ていない場合など。少し待って再トライ
+                    rate.sleep()
+                    continue
+
                 rx = trans.transform.translation.x
                 ry = trans.transform.translation.y
                 q  = trans.transform.rotation
@@ -97,6 +102,10 @@ class IRMEditRouteExecutor:
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
             trans = self.lookup_transform(self.frame_map, self.frame_base)
+            if trans is None:
+                rate.sleep()
+                continue
+                
             q  = trans.transform.rotation
             _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
             err = math.atan2(math.sin(target_yaw - yaw),

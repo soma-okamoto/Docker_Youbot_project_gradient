@@ -268,9 +268,9 @@ def bottle_cb(msg):
     """Float32MultiArray: data=[x,y,z,...] を想定"""
     global bottle_xyz
     if len(msg.data) >= 3:
-        bottle_xyz[0] = float(msg.data[0])
-        bottle_xyz[1] = float(msg.data[1])
-        bottle_xyz[2] = float(msg.data[2])
+        bottle_xyz[0] = -float(msg.data[0])
+        bottle_xyz[1] = -float(msg.data[2])
+        bottle_xyz[2] = float(msg.data[1])
 
 # ================== メイン ========================================================================================================
 if __name__ == '__main__':
@@ -315,10 +315,11 @@ if __name__ == '__main__':
     t0 = rospy.get_time()
 
     rate = rospy.Rate(30)
+    print("Start")
 
     while not rospy.is_shutdown():
         now = rospy.get_time() - t0
-
+        
         # ---- 手ポーズ取得 ----
         if (palm_pose.pose.position.x == 0 and
             palm_pose.pose.position.y == 0 and
@@ -482,7 +483,7 @@ if __name__ == '__main__':
             DegToRad(167.5)
         ]
         cand_deg = [RadToDeg(c) for c in cand]  # 可視化/下流向けは実機角(deg)で統一
-
+        # print(cand_deg)
         # ---- Publish ----
         # フェーズをメトリクスに入れる（可視化・デバッグ）
         phase_id = float(phase.value)
@@ -494,6 +495,7 @@ if __name__ == '__main__':
             float(Jdnull_norm), float(dnull_norm), float(de_due_null),
             phase_id
         ]
+        
      
 
         metrics_pub.publish(Float32MultiArray(data=metrics))

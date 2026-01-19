@@ -214,7 +214,7 @@ if __name__ == '__main__':
 
         quaternion = [pose.pose.orientation.x,pose.pose.orientation.y,pose.pose.orientation.z,pose.pose.orientation.w]
         r = quaternion_to_euler(quaternion)
-        #print(r)
+        # print(r)
         
         pose_xy = math.sqrt(pose_holo[0]*pose_holo[0] + pose_holo[1]*pose_holo[1])
         pose_z = pose_holo[2]
@@ -261,7 +261,7 @@ if __name__ == '__main__':
 
 
         cand = [theta_0,DegToRad(65)- theta[0] ,-DegToRad(146) - theta[1],DegToRad(102.5) - theta[2],DegToRad(167.5) ]
-        # print(cand)
+        print(cand)
         cand_deg = [RadToDeg(theta_0) ,RadToDeg(theta[0]),RadToDeg(theta[1]),RadToDeg(theta[2]),RadToDeg(cand[4])]
 
         arm1_joint_pub = Float32MultiArray(data=cand_deg)

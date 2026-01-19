@@ -64,7 +64,7 @@ class Phase(Enum):
     REALIGN = 2   # 姿勢再整列（ヌル空間最適化を重視）
     APPROACH= 3   # 再接近（pregrasp/targetへ）
 
-BACKOFF_D       = 0.07   # [m] 退避量（r方向に手前へ）
+BACKOFF_D       = 0.05  # [m] 退避量（r方向に手前へ）
 MARGIN_MIN_THR  = 0.08   # [rad] 最小マージンしきい値
 REALIGN_DT_MAX  = 0.6    # [s] 再整列の最長時間（フェイルセーフ）
 IMPROVE_H_MIN   = 0.08   # H 改善の目安
@@ -433,7 +433,7 @@ if __name__ == '__main__':
                 # 後退目標（スタンドオフ）を用意（rを手前に）
                 r_stand = pre_rzp[0] + BACKOFF_D
                 stand_rzp = [r_stand, pre_rzp[1], pre_rzp[2]]
-                phase = Phase.BACKOFF
+                # phase = Phase.BACKOFF
                 last_switch_t = now
                 Phase_name="BACKOFF"
 

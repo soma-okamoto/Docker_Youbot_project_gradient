@@ -175,7 +175,7 @@ roslaunch esaki_youbot_project_gradient youbot_bringup.launch
 export ROS_MASTER_URI=http://ros_dev:11311
 export ROS_HOSTNAME=youbot_ros 
 source /opt/ros/noetic/setup.bash
-source /root/catkin_ws/devel/setup.bash
+source ~/project/catkin_ws/devel/setup.bash
 
 
 cd src/youbot_description/urdf/youbot_arm
@@ -189,7 +189,7 @@ nano arm.urdf.xacro
 
 
 cd catkin_ws
-grep -rl 'xacro.py' ~/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
+grep -rl 'xacro.py' ~/project/catkin_ws/src | grep '\.launch' | xargs sed -i 's#$(find xacro)/xacro.py#$(find xacro)/xacro#g'
 
 roslaunch youbot_gazebo_robot youbot.launch
 roslaunch youbot_gazebo_robot youbot_dual_arm.launch

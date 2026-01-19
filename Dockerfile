@@ -6,34 +6,37 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
  && echo $TZ > /etc/timezone
 
 # 必要な apt パッケージのインストール
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
       git \
       python3-pip \
       python3-catkin-tools \
       python3-rosdep \
+      libnss-wrapper \
       qtbase5-dev \
       qtbase5-dev-tools \
       libqt5core5a \
       libqt5gui5 \
       libqt5widgets5 \
       libhdf5-dev \
-      ros-noetic-actionlib\
-      ros-noetic-tf\
-      ros-noetic-cv-bridge\
-      python3-opencv\
-      libopencv-dev\
-      ros-noetic-moveit-ros-planning-interface\
-      ros-noetic-control-msgs\
-      libyaml-cpp-dev\
-      pkg-config\
-      ros-noetic-rviz\
-      ros-noetic-sparse-bundle-adjustment\
-      ros-noetic-map-server\
-      libceres-dev\
-      ros-noetic-move-base\
-      ros-noetic-interactive-markers\
-      libceres1\
-      ros-noetic-teb-local-planner\
+      ros-noetic-actionlib \
+      ros-noetic-tf \
+      ros-noetic-cv-bridge \
+      python3-opencv \
+      libopencv-dev \
+      ros-noetic-moveit-ros-planning-interface \
+      ros-noetic-control-msgs \
+      libyaml-cpp-dev \
+      build-essential \
+      cmake \
+      pkg-config \
+      ros-noetic-rviz \
+      ros-noetic-sparse-bundle-adjustment \
+      ros-noetic-map-server \
+      libceres-dev \
+      ros-noetic-move-base \
+      ros-noetic-interactive-markers \
+      libceres1 \
+      ros-noetic-teb-local-planner \
       dos2unix \
       ros-noetic-xacro \
       ros-noetic-robot-state-publisher \
@@ -41,13 +44,20 @@ RUN apt-get update && apt-get install -y \
       python3-pykdl \
     && rm -rf /var/lib/apt/lists/*
 
-# rosdep 初期化
-RUN rosdep init \
- && rosdep update
+# rosdep 初期化（安全化：既に初期化済みでも落ちない）
+RUN rosdep init 2>/dev/null || true \
+ && rosdep update || true
 
 
-# 作業ディレクトリ設定
-WORKDIR /root
+# ★追加：新entrypointを配置
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# ★重要：/work をデフォルト作業場所にする（非root運用と整合）
+WORKDIR /work
+
+# ★変更：/ros_entrypoint.sh をラップする
+ENTRYPOINT ["/entrypoint.sh"]
 
 # デフォルトシェル
 CMD ["bash"]

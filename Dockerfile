@@ -44,9 +44,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3-pykdl \
     && rm -rf /var/lib/apt/lists/*
 
-# rosdep 初期化（安全化：既に初期化済みでも落ちない）
-RUN rosdep init 2>/dev/null || true \
- && rosdep update || true
+RUN pip3 install --upgrade pip \
+ && pip3 install --no-cache-dir open3d \
+ && pip3 install --no-cache-dir "numpy==1.24.4" --upgrade --ignore-installed
+
+
+# ------- ここまで -------
+
+# rosdep 初期化
+RUN rosdep init \
+ && rosdep update
 
 
 # ★追加：新entrypointを配置

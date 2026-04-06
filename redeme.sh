@@ -70,13 +70,13 @@ docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
   -e ROS_MASTER_URI=http://192.168.11.14:11311 \
-  -e ROS_IP=192.168.11.11 \
+  -e ROS_IP=192.168.11.18 \
   youbot_pro tail -f /dev/null
 
 
 docker exec -it youbot_pro bash
 cd catkin_ws
-export ROS_IP=192.168.11.11
+export ROS_IP=192.168.11.18
 export ROS_MASTER_URI=http://192.168.11.14:11311
 source devel/setup.bash
 
@@ -131,7 +131,7 @@ catkin build
 ######yolov5
 
 cd catkin_ws
-export ROS_IP=192.168.11.11
+export ROS_IP=192.168.11.18
 export ROS_MASTER_URI=http://192.168.11.14:11311
 source devel/setup.bash
 

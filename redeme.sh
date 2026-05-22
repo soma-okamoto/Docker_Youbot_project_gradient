@@ -37,8 +37,8 @@ export ROS_MASTER_URI=http://192.168.11.14:11311
 docker rm -f irm_dev
 docker run -d --name irm_dev --network=host \
   -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
-  -e ROS_MASTER_URI=http://192.168.11.14:11311/ \
-  -e ROS_IP=192.168.11.11  \
+  -e ROS_MASTER_URI=http://192.168.11.13:11311/ \
+  -e ROS_IP=192.168.11.18  \
   irm_dev tail -f /dev/null
 
 
@@ -52,8 +52,8 @@ roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
 
 docker exec -it irm_dev bash
 cd Detect_ws
-export ROS_IP=192.168.11.11
-export ROS_MASTER_URI=http://192.168.11.14:11311
+export ROS_IP=192.168.11.18
+export ROS_MASTER_URI=http://192.168.11.13:11311
 source devel/setup.bash
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
@@ -62,14 +62,14 @@ rosrun detect_pkg DetectTarget.py \
 
 ############################################################################################
 # 1) youbootターミナル##############################################################################
-export ROS_IP=192.168.11.6
-export ROS_MASTER_URI=http://192.168.11.14:11311
+export ROS_IP=192.168.11.18
+export ROS_MASTER_URI=http://192.168.11.7:11311
 
 
 docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
-  -e ROS_MASTER_URI=http://192.168.11.14:11311 \
+  -e ROS_MASTER_URI=http://192.168.11.7:11311 \
   -e ROS_IP=192.168.11.18 \
   youbot_pro tail -f /dev/null
 
@@ -77,7 +77,7 @@ docker run -d --name youbot_pro --network=host \
 docker exec -it youbot_pro bash
 cd catkin_ws
 export ROS_IP=192.168.11.18
-export ROS_MASTER_URI=http://192.168.11.14:11311
+export ROS_MASTER_URI=http://192.168.11.7:11311
 source devel/setup.bash
 
 
@@ -112,6 +112,7 @@ rosrun esaki_youbot_project_gradient Bridge_Simulation_command.py
 
 
 ####PointCloudの取得・合成(youbotが動く)
+
 rosrun esaki_youbot_project_gradient move_base_global_registration.py
 
 
@@ -132,7 +133,7 @@ catkin build
 
 cd catkin_ws
 export ROS_IP=192.168.11.18
-export ROS_MASTER_URI=http://192.168.11.14:11311
+export ROS_MASTER_URI=http://192.168.11.7:11311
 source devel/setup.bash
 
 cd src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet/
@@ -147,7 +148,7 @@ cd src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet/
  
 rosrun Yolov5_StrongSORT track_save_cpu.py 
 
-
+rosrun Yolov5_StrongSORT QRPostion_test.py 
 
 # conda activate yolo_env
 # export ROS_MASTER_URI=http://192.168.11.14:11311
@@ -159,4 +160,6 @@ rosrun Yolov5_StrongSORT track_save_cpu.py
 ############################################################
 find . -name "*.py" -exec chmod +x {} \;
 
-sudo ip route add 10.42.0.0/24 via 192.168.11.14
+sudo ip route add 10.42.0.0/24 via 192.168.11.7
+
+sudo ntpdate -u ccntp.meijo-u.ac.jp

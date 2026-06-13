@@ -51,7 +51,7 @@ JOINT_LIMITS = [
 ]
 
 # ブレンドと吸着挙動
-PREGRASP_OFFSET = -0.06   # r方向の手前オフセット[m]
+PREGRASP_OFFSET = -0.09   # r方向の手前オフセット[m]
 D_IN   = 0.18            # 吸着開始距離（以下で吸着）
 D_OUT  = 0.3            # 吸着解除距離（以上で解除）
 SIG_K  = 40.0            # シグモイド鋭さ

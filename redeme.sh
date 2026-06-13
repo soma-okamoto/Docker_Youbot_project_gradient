@@ -22,8 +22,8 @@ PC3手順
 #####################################################################
 ###############################Youbotsim#######################
 cd Doceker_ws/Docker_youbot_sim
-export ROS_IP=192.168.11.11
-export ROS_MASTER_URI=http://192.168.11.14:11311
+export ROS_IP=192.168.11.22
+export ROS_MASTER_URI=http://192.168.11.2:11311
 source devel/setup.bash
 
 roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=empty_world
@@ -37,23 +37,23 @@ export ROS_MASTER_URI=http://192.168.11.14:11311
 docker rm -f irm_dev
 docker run -d --name irm_dev --network=host \
   -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
-  -e ROS_MASTER_URI=http://192.168.11.13:11311/ \
-  -e ROS_IP=192.168.11.18  \
+  -e ROS_MASTER_URI=http://192.168.11.2:11311/ \
+  -e ROS_IP=192.168.11.22  \
   irm_dev tail -f /dev/null
 
 
 docker exec -it irm_dev bash
 cd RM
-export ROS_IP=192.168.11.11
-export ROS_MASTER_URI=http://192.168.11.14:11311
+export ROS_IP=192.168.11.22
+export ROS_MASTER_URI=http://192.168.11.2:11311
 source devel/setup.bash
 roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
 
 
 docker exec -it irm_dev bash
 cd Detect_ws
-export ROS_IP=192.168.11.18
-export ROS_MASTER_URI=http://192.168.11.13:11311
+export ROS_IP=192.168.11.22
+export ROS_MASTER_URI=http://192.168.11.2:11311
 source devel/setup.bash
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
@@ -62,22 +62,22 @@ rosrun detect_pkg DetectTarget.py \
 
 ############################################################################################
 # 1) youbootターミナル##############################################################################
-export ROS_IP=192.168.11.18
-export ROS_MASTER_URI=http://192.168.11.7:11311
+export ROS_IP=192.168.11.27
+export ROS_MASTER_URI=http://192.168.11.28:11311
 
 
 docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
-  -e ROS_MASTER_URI=http://192.168.11.7:11311 \
-  -e ROS_IP=192.168.11.18 \
+  -e ROS_MASTER_URI=http://192.168.11.28:11311 \
+  -e ROS_IP=192.168.11.27 \
   youbot_pro tail -f /dev/null
 
 
 docker exec -it youbot_pro bash
 cd catkin_ws
-export ROS_IP=192.168.11.18
-export ROS_MASTER_URI=http://192.168.11.7:11311
+export ROS_IP=192.168.11.27
+export ROS_MASTER_URI=http://192.168.11.28:11311
 source devel/setup.bash
 
 
@@ -132,8 +132,8 @@ catkin build
 ######yolov5
 
 cd catkin_ws
-export ROS_IP=192.168.11.18
-export ROS_MASTER_URI=http://192.168.11.7:11311
+export ROS_IP=192.168.11.27
+export ROS_MASTER_URI=http://192.168.11.28:11311
 source devel/setup.bash
 
 cd src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet/
@@ -160,6 +160,6 @@ rosrun Yolov5_StrongSORT QRPostion_test.py
 ############################################################
 find . -name "*.py" -exec chmod +x {} \;
 
-sudo ip route add 10.42.0.0/24 via 192.168.11.7
+sudo ip route add 10.42.0.0/24 via 192.168.11.28
 
-sudo ntpdate -u ccntp.meijo-u.ac.jp
+-

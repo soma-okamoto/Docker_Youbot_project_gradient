@@ -37,8 +37,8 @@ export ROS_MASTER_URI=http://192.168.11.14:11311
 docker rm -f irm_dev
 docker run -d --name irm_dev --network=host \
   -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
-  -e ROS_MASTER_URI=http://192.168.11.2:11311/ \
-  -e ROS_IP=192.168.11.22  \
+  -e ROS_MASTER_URI=http://192.168.11.17:11311/ \
+  -e ROS_IP=192.168.11.16  \
   irm_dev tail -f /dev/null
 
 
@@ -52,8 +52,8 @@ roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
 
 docker exec -it irm_dev bash
 cd Detect_ws
-export ROS_IP=192.168.11.22
-export ROS_MASTER_URI=http://192.168.11.2:11311
+export ROS_IP=192.168.11.16
+export ROS_MASTER_URI=http://192.168.11.17:11311
 source devel/setup.bash
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
@@ -62,22 +62,22 @@ rosrun detect_pkg DetectTarget.py \
 
 ############################################################################################
 # 1) youbootターミナル##############################################################################
-export ROS_IP=192.168.11.27
-export ROS_MASTER_URI=http://192.168.11.28:11311
+export ROS_IP=192.168.11.16
+export ROS_MASTER_URI=http://192.168.11.17:11311
 
 
 docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
-  -e ROS_MASTER_URI=http://192.168.11.28:11311 \
-  -e ROS_IP=192.168.11.27 \
+  -e ROS_MASTER_URI=http://192.168.11.17:11311 \
+  -e ROS_IP=192.168.11.16 \
   youbot_pro tail -f /dev/null
 
 
 docker exec -it youbot_pro bash
 cd catkin_ws
-export ROS_IP=192.168.11.27
-export ROS_MASTER_URI=http://192.168.11.28:11311
+export ROS_IP=192.168.11.16
+export ROS_MASTER_URI=http://192.168.11.17:11311
 source devel/setup.bash
 
 
@@ -88,6 +88,9 @@ rosrun esaki_youbot_project_gradient youbot_real_trajectory_node_FMS.py
 # rosrun esaki_youbot_project_gradient gripper.py 
 
 rosrun esaki_youbot_project_gradient youbot_camera_real_trajectory_node.py 
+
+右アーム追従
+rosrun esaki_youbot_project_gradient youbot_camera_trajectory_TF.py 
 
 
 ###SimBridge
@@ -122,9 +125,7 @@ rosrun esaki_youbot_project_gradient afine_transformation.py
 
 ########
 catkin clean -f 
-source /opt/ros/noetic/setup.bash
-catkin build
-
+ 
 
 
 ############################################################################################
@@ -132,8 +133,8 @@ catkin build
 ######yolov5
 
 cd catkin_ws
-export ROS_IP=192.168.11.27
-export ROS_MASTER_URI=http://192.168.11.28:11311
+export ROS_IP=192.168.11.16
+export ROS_MASTER_URI=http://192.168.11.17:11311
 source devel/setup.bash
 
 cd src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet/
@@ -160,6 +161,53 @@ rosrun Yolov5_StrongSORT QRPostion_test.py
 ############################################################
 find . -name "*.py" -exec chmod +x {} \;
 
-sudo ip route add 10.42.0.0/24 via 192.168.11.28
+sudo ip route add 10.42.0.0/24 via 192.168.11.17
 
--
+
+
+
+
+
+
+##############AMIR##################################################################################
+xhost +local:
+
+docker rm -f humble_dev
+docker run -d --name humble_dev --network=host \
+  -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
+  -e ROS_DOMAIN_ID=0 \
+  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
+  -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+  -v ~/ros2_humble_ws/src/humbleble_ws:/home/dev/ws \
+  humble_dev tail -f /dev/null
+
+
+docker exec -it humble_dev bash
+cd ~/ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+gazebo 立ち上げ
+source install/setup.bash
+ros2 launch amir_gazebo gazebo_bringup.launch.py
+
+
+Servo 一式起動 (servo_node + joint_state_filter + forward_position_controller を --inactive で spawn)
+source install/setup.bash
+ros2 launch amir_operation vr_servo_launch.py
+
+
+出力先を Servo へ切替 (JTC を止めて forward_position_controller を有効化)
+source install/setup.bash
+ros2 control switch_controllers --deactivate arm_controller --activate forward_position_controller
+
+
+キーボード操作 (3DOF位置ジョグ版 / 5軸で並進だけ素直に動かす)【推奨】
+source install/setup.bash
+ros2 run amir_operation servo_keyboard_jog 
+
+
+自律動作 (JTC) へ戻す
+source install/setup.bash
+ros2 control switch_controllers --deactivate forward_position_controller --activate arm_controller

@@ -1,0 +1,26 @@
+<launch>
+  <!-- ============================= -->
+  <!-- YouBot Base Move Nodes -->
+  <!-- ============================= -->
+
+  <!-- 原点・オフセットを配信 -->
+  <!-- <node
+    name="origin_move_pub"
+    pkg="esaki_youbot_project_gradient"
+    type="Origin_move_pub.py"
+    output="screen" /> -->
+
+  <node
+    name="origin_move_pub_slam"
+    pkg="esaki_youbot_project_gradient"
+    type="Origin_move_pub_slam.py"
+    output="screen" />
+
+  <!-- IRM に基づく YouBot ベース移動 -->
+  <node
+    name="irm_youbot_base_move"
+    pkg="esaki_youbot_project_gradient"
+    type="IRM_youbot_baseMove.py"
+    output="screen" />
+
+</launch>

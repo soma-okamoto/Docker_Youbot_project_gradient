@@ -124,7 +124,7 @@ class AMIRKeyboardJointJogROS1:
 
     def publish(self):
         msg = JointJog()
-        msg.header.stamp = rospy.Time.now()
+        msg.header.stamp = rospy.Time(0)
         msg.header.frame_id = self.frame_id
 
         msg.joint_names = list(self.joint_names)

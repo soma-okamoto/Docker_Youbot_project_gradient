@@ -176,7 +176,7 @@ docker rm -f humble_dev
 docker run -d --name humble_dev --network=host \
   -e DISPLAY=$DISPLAY \
   -e QT_X11_NO_MITSHM=1 \
-  -e ROS_DOMAIN_ID=0 \
+  -e ROS_DOMAIN_ID=41 \
   -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
   -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
   -v ~/ros2_humble_ws/src/humbleble_ws:/home/dev/ws \
@@ -184,26 +184,43 @@ docker run -d --name humble_dev --network=host \
 
 
 docker exec -it humble_dev bash
+
 cd ~/ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
 gazebo 立ち上げ
+source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 launch amir_gazebo gazebo_bringup.launch.py
 
 
 Servo 一式起動 (servo_node + joint_state_filter + forward_position_controller を --inactive で spawn)
+source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 launch amir_operation vr_servo_launch.py
 
 
 出力先を Servo へ切替 (JTC を止めて forward_position_controller を有効化)
+source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 control switch_controllers --deactivate arm_controller --activate forward_position_controller
 
+# 1. Servo停止
+ros2 service call /servo_node/stop_servo std_srvs/srv/Trigger {}
+
+# 2. 初期姿勢に戻す
+ros2 topic pub -r 10 /forward_position_controller/commands std_msgs/msg/Float64MultiArray "{data: [-0.428950932982121, 0.5292646205734075, -1.132436603496916, -0.7451734776362945, 0.0]}"
+
+# 数秒後 Ctrl+C
+
+# 3. Servo状態リセット
+ros2 service call /servo_node/reset_servo_status std_srvs/srv/Trigger {}
+ros2 service call /servo_node/start_servo std_srvs/srv/Trigger {}
+
 
 キーボード操作 (3DOF位置ジョグ版 / 5軸で並進だけ素直に動かす)【推奨】
+source /opt/ros/humble/setup.bash
 source install/setup.bash
 ros2 run amir_operation servo_keyboard_jog 
 
@@ -211,3 +228,17 @@ ros2 run amir_operation servo_keyboard_jog
 自律動作 (JTC) へ戻す
 source install/setup.bash
 ros2 control switch_controllers --deactivate forward_position_controller --activate arm_controller
+
+
+
+
+
+rosrun esaki_youbot_project_gradient AMIR_Keybord.py \
+  _joint_names:="['Joint_1','Joint_2','Joint_3','Joint_4','Joint_5']" \
+  _speed:=0.20 \
+  _rate:=60.0 \
+  _duration:=0.05
+
+rosrun esaki_youbot_project_gradient AMIR_real_trajectory.py 
+
+ros2 run amir_operation amir_gripper

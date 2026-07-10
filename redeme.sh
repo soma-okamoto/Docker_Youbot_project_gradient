@@ -89,7 +89,7 @@ rosrun esaki_youbot_project_gradient youbot_real_trajectory_node_FMS.py
 
 rosrun esaki_youbot_project_gradient youbot_camera_real_trajectory_node.py 
 
-右アーム追従
+右アーム追従＆tf
 rosrun esaki_youbot_project_gradient youbot_camera_trajectory_TF.py 
 
 
@@ -164,7 +164,7 @@ find . -name "*.py" -exec chmod +x {} \;
 sudo ip route add 10.42.0.0/24 via 192.168.11.17
 
 
-
+sudo ntpdate -u ccntp.meijo-u.ac.jp
 
 
 
@@ -241,4 +241,6 @@ rosrun esaki_youbot_project_gradient AMIR_Keybord.py \
 
 rosrun esaki_youbot_project_gradient AMIR_real_trajectory.py 
 
-ros2 run amir_operation amir_gripper
+ros2 run amir_operation amir_gripper.py
+
+ros2 run amir_operation amir_real_trajectory.py

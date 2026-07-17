@@ -16,4 +16,4 @@ catkin_ws/.catkin_tools/
 .idea/
 
 # その他
-*.log
+*.log.bash_history

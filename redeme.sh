@@ -1,19 +1,33 @@
 ######################################################################################################
 #################################################################################################
-#ホスト側
+# #ホスト側
 
-PC２
+# PC２
 
-export ROS_MASTER_URI=http://192.168.11.14:11311
-export ROS_IP=192.168.11.14
-export ROS_HOSTNAME=192.168.11.14
+# export ROS_MASTER_URI=http://192.168.11.14:11311
+# export ROS_IP=192.168.11.14
+# export ROS_HOSTNAME=192.168.11.14
 
-roslaunch rosbridge_server rosbridge_websocket.launch
+# roslaunch rosbridge_server rosbridge_websocket.launch
 
-# PC３ の IP
-export ROS_IP=192.168.11.6
-export ROS_MASTER_URI=http://192.168.11.14:11311
+# # PC３ の IP
+# export ROS_IP=192.168.11.6
+# export ROS_MASTER_URI=http://192.168.11.14:11311
 
+find . -name "*.py" -exec chmod +x {} \;
+sudo ntpdate -u ccntp.meijo-u.ac.jp
+
+
+
+
+PC2で実行必須 
+sudo ip route add 10.42.0.0/24 via 192.168.11.48
+
+PC1で実行必須
+sudo sysctl -w net.ipv4.ip_forward=1
+
+sudo iptables -A FORWARD -i wlo1 -o eno1 -j ACCEPT
+sudo iptables -A FORWARD -i eno1 -o wlo1 -j ACCEPT
 
 
 ####################################################################################
@@ -37,8 +51,8 @@ export ROS_MASTER_URI=http://192.168.11.14:11311
 docker rm -f irm_dev
 docker run -d --name irm_dev --network=host \
   -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
-  -e ROS_MASTER_URI=http://192.168.11.17:11311/ \
-  -e ROS_IP=192.168.11.16  \
+  -e ROS_MASTER_URI=http://192.168.11.48:11311/ \
+  -e ROS_IP=192.168.11.47  \
   irm_dev tail -f /dev/null
 
 
@@ -52,8 +66,8 @@ roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
 
 docker exec -it irm_dev bash
 cd Detect_ws
-export ROS_IP=192.168.11.16
-export ROS_MASTER_URI=http://192.168.11.17:11311
+export ROS_IP=192.168.11.47
+export ROS_MASTER_URI=http://192.168.11.48:11311
 source devel/setup.bash
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
@@ -85,7 +99,7 @@ source devel/setup.bash
 #####mani
 rosrun esaki_youbot_project_gradient youbot_real_trajectory_node.py
 rosrun esaki_youbot_project_gradient youbot_real_trajectory_node_FMS.py
-# rosrun esaki_youbot_project_gradient gripper.py 
+rosrun esaki_youbot_project_gradient gripper.py 
 
 rosrun esaki_youbot_project_gradient youbot_camera_real_trajectory_node.py 
 
@@ -138,9 +152,10 @@ source devel/setup.bash
 
 roslaunch realsense2_camera cubeslam_camera.launch 
 
-####################RTX5070 Yolov5_deep_sort
+####################RTX5070 Yolov5_deep_sort#################################
 docker rm -f yolov5-strongsort:rtx5070-cu128
 
+cd /home/dars/catkin_ws/src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
 sudo -E env \
   ROS_MASTER_URI=http://192.168.11.48:11311 \
   ROS_IP=192.168.11.47 \
@@ -166,14 +181,7 @@ rosrun Yolov5_StrongSORT QRPostion_test.py
 
 
 
-#####################################################################
-############################################################
-find . -name "*.py" -exec chmod +x {} \;
 
-sudo ip route add 10.42.0.0/24 via 192.168.11.47
-
-
-sudo ntpdate -u ccntp.meijo-u.ac.jp
 
 
 
@@ -243,13 +251,13 @@ ros2 control switch_controllers --deactivate forward_position_controller --activ
 
 
 
-rosrun esaki_youbot_project_gradient AMIR_Keybord.py \
-  _joint_names:="['Joint_1','Joint_2','Joint_3','Joint_4','Joint_5']" \
-  _speed:=0.20 \
-  _rate:=60.0 \
-  _duration:=0.05
+# rosrun esaki_youbot_project_gradient AMIR_Keybord.py \
+#   _joint_names:="['Joint_1','Joint_2','Joint_3','Joint_4','Joint_5']" \
+#   _speed:=0.20 \
+#   _rate:=60.0 \
+#   _duration:=0.05
 
-rosrun esaki_youbot_project_gradient AMIR_real_trajectory.py 
+# rosrun esaki_youbot_project_gradient AMIR_real_trajectory.py 
 
 ros2 run amir_operation amir_gripper.py
 

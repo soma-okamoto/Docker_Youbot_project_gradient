@@ -22,8 +22,8 @@ PC3手順
 #####################################################################
 ###############################Youbotsim#######################
 cd Doceker_ws/Docker_youbot_sim
-export ROS_IP=192.168.11.22
-export ROS_MASTER_URI=http://192.168.11.2:11311
+export ROS_IP=192.168.11.13
+export ROS_MASTER_URI=http://192.168.11.30:11311
 source devel/setup.bash
 
 roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=empty_world
@@ -69,15 +69,15 @@ export ROS_MASTER_URI=http://192.168.11.17:11311
 docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
-  -e ROS_MASTER_URI=http://192.168.11.17:11311 \
-  -e ROS_IP=192.168.11.16 \
+  -e ROS_MASTER_URI=http://192.168.11.48:11311 \
+  -e ROS_IP=192.168.11.47 \
   youbot_pro tail -f /dev/null
 
 
 docker exec -it youbot_pro bash
 cd catkin_ws
-export ROS_IP=192.168.11.16
-export ROS_MASTER_URI=http://192.168.11.17:11311
+export ROS_IP=192.168.11.47
+export ROS_MASTER_URI=http://192.168.11.48:11311
 source devel/setup.bash
 
 
@@ -130,41 +130,51 @@ catkin clean -f
 
 ############################################################################################
 ########################################################################################################
-######yolov5
 
-cd catkin_ws
-export ROS_IP=192.168.11.16
-export ROS_MASTER_URI=http://192.168.11.17:11311
+cd realsense_ws
+export ROS_IP=192.168.11.47
+export ROS_MASTER_URI=http://192.168.11.48:11311
 source devel/setup.bash
 
-cd src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet/
+roslaunch realsense2_camera cubeslam_camera.launch 
 
+####################RTX5070 Yolov5_deep_sort
+docker rm -f yolov5-strongsort:rtx5070-cu128
 
-# rosrun Yolov5_StrongSORT track_1.py
-# rosrun Yolov5_StrongSORT track_1.py --device cpu
+sudo -E env \
+  ROS_MASTER_URI=http://192.168.11.48:11311 \
+  ROS_IP=192.168.11.47 \
+  ./run_rtx5070.sh
 
-# rosrun Yolov5_StrongSORT track.py --device cpu
+source /opt/ros/noetic/setup.bash
+source /opt/ros_py310/setup.bash
+source /home/dars/catkin_ws/devel/setup.bash
+
+cd /home/dars/catkin_ws/src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
+rosrun Yolov5_StrongSORT track_save_gpu.py \
+  --device 0 \
+  --view-img
 
 ＃これarm2のcommandないとエラーはく
  
-rosrun Yolov5_StrongSORT track_save_cpu.py 
 
 rosrun Yolov5_StrongSORT QRPostion_test.py 
 
-# conda activate yolo_env
-# export ROS_MASTER_URI=http://192.168.11.14:11311
-# export ROS_IP=192.168.11.6
-# CUDA_FORCE_PTX_JIT=1 TORCH_CUDA_ARCH_LIST="9.0" python track_1_cal.py
+
+
+
+
 
 
 #####################################################################
 ############################################################
 find . -name "*.py" -exec chmod +x {} \;
 
-sudo ip route add 10.42.0.0/24 via 192.168.11.17
+sudo ip route add 10.42.0.0/24 via 192.168.11.47
 
 
 sudo ntpdate -u ccntp.meijo-u.ac.jp
+
 
 
 

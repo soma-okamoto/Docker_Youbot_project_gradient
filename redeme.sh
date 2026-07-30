@@ -36,8 +36,8 @@ PC3手順
 #####################################################################
 ###############################Youbotsim#######################
 cd Doceker_ws/Docker_youbot_sim
-export ROS_IP=192.168.11.13
-export ROS_MASTER_URI=http://192.168.11.30:11311
+export ROS_IP=192.168.11.47
+export ROS_MASTER_URI=http://192.168.11.47:11311
 source devel/setup.bash
 
 roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=empty_world
@@ -51,7 +51,7 @@ export ROS_MASTER_URI=http://192.168.11.14:11311
 docker rm -f irm_dev
 docker run -d --name irm_dev --network=host \
   -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
-  -e ROS_MASTER_URI=http://192.168.11.48:11311/ \
+  -e ROS_MASTER_URI=http://192.168.11.47:11311/ \
   -e ROS_IP=192.168.11.47  \
   irm_dev tail -f /dev/null
 
@@ -67,7 +67,7 @@ roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
 docker exec -it irm_dev bash
 cd Detect_ws
 export ROS_IP=192.168.11.47
-export ROS_MASTER_URI=http://192.168.11.48:11311
+export ROS_MASTER_URI=http://192.168.11.47:11311
 source devel/setup.bash
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
@@ -83,7 +83,7 @@ export ROS_MASTER_URI=http://192.168.11.17:11311
 docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
-  -e ROS_MASTER_URI=http://192.168.11.48:11311 \
+  -e ROS_MASTER_URI=http://192.168.11.47:11311 \
   -e ROS_IP=192.168.11.47 \
   youbot_pro tail -f /dev/null
 
@@ -91,7 +91,7 @@ docker run -d --name youbot_pro --network=host \
 docker exec -it youbot_pro bash
 cd catkin_ws
 export ROS_IP=192.168.11.47
-export ROS_MASTER_URI=http://192.168.11.48:11311
+export ROS_MASTER_URI=http://192.168.11.47:11311
 source devel/setup.bash
 
 
@@ -109,7 +109,7 @@ rosrun esaki_youbot_project_gradient youbot_camera_trajectory_TF.py
 
 ###SimBridge
 rosrun esaki_youbot_project_gradient Bridge_Simulation_command.py
-
+rosrun esaki_youbot_project_gradient Bridge_Simulation_TF.p
 
 # ####Slam
 # roslaunch esaki_slam youbot_move_base.launch
@@ -137,14 +137,10 @@ rosrun esaki_youbot_project_gradient move_base_global_registration.py
 rosrun esaki_youbot_project_gradient afine_transformation.py
 
 
-########
-catkin clean -f 
- 
+roslaunch place_estimation place_estimation_pipeline.launch 
 
 
 ############################################################################################
-########################################################################################################
-
 cd realsense_ws
 export ROS_IP=192.168.11.47
 export ROS_MASTER_URI=http://192.168.11.48:11311
@@ -170,8 +166,7 @@ rosrun Yolov5_StrongSORT track_save_gpu.py \
   --device 0 \
   --view-img
 
-＃これarm2のcommandないとエラーはく
- 
+rosrun Yolov5_StrongSORT track_P_yolo.py 
 
 rosrun Yolov5_StrongSORT QRPostion_test.py 
 

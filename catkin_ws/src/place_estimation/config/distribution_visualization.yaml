@@ -1,0 +1,15 @@
+# RViz covariance-ellipsoid visualization
+prior_pose_topic: /P_pred
+prior_cov_topic: /Sigma_pred
+posterior_pose_topic: /P_place
+posterior_cov_topic: /Sigma_place
+marker_topic: /place_distribution_markers
+
+# Radius of each principal axis = sigma_scale * standard deviation.
+sigma_scale: 2.0
+min_axis: 0.002
+marker_lifetime: 0.0
+
+# [red, green, blue, alpha]
+prior_color: [0.15, 0.45, 1.0, 0.35]
+posterior_color: [1.0, 0.25, 0.15, 0.35]

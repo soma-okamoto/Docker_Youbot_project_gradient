@@ -7,7 +7,7 @@ import numpy as np
 import tf
 
 from brics_actuator.msg import JointPositions, JointValue
-from std_msgs.msg import String
+from std_msgs.msg import String,Float32MultiArray
 from geometry_msgs.msg import PoseStamped
 
 
@@ -108,8 +108,12 @@ class YoubotCameraArmController:
 
         self.place_ee_pose = None
 
+        # P_current保存用
+        self.p_current = np.zeros(3, dtype=np.float64)
+        self.p_current_received = False
 
-        #######P_yolo用
+
+
         self.arm_2_command_publisher = rospy.Publisher(
             arm_2_topic_name,
             arm_2_msg_type,
@@ -117,16 +121,10 @@ class YoubotCameraArmController:
         )
 
 
-        # self.hold_ee_pub = rospy.Publisher(
-        #     "/arm1_ee_current_on_hold",
-        #     PoseStamped,
-        #     queue_size=10
-        # )
-
         #######P_TF用
 
         self.place_ee_pub = rospy.Publisher(
-            "/arm1_ee_at_place",
+            "/P_tf",
             PoseStamped,
             queue_size=10
         )
@@ -134,9 +132,11 @@ class YoubotCameraArmController:
         # =========================
         # Subscriber
         # =========================
+        rospy.Subscriber('/P_current', Float32MultiArray, self.callback_p_current)
+
         rospy.Subscriber('/place_command', String, self.callback_place_command)
         rospy.Subscriber('/Hold_command', String, self.callback_hold_command)
-
+  
         # =========================
         # Initial Arm2 posture
         # =========================
@@ -229,6 +229,22 @@ class YoubotCameraArmController:
         self.last_hold_time = rospy.Time.now()
         self.hold_active = True
 
+    def callback_p_current(self, msg):
+        if len(msg.data) < 4:
+            rospy.logwarn_throttle(
+                1.0,
+                "/P_current data is too short: len=%d",
+                len(msg.data)
+            )
+            return
+
+        self.p_current[0] = float(msg.data[1])
+        self.p_current[1] = float(msg.data[2])
+        self.p_current[2] = float(msg.data[3])
+        self.p_current_received = True
+
+
+
     
 #######################################################################
 ############################メイン処理##################################
@@ -242,10 +258,7 @@ class YoubotCameraArmController:
             if now - self.last_hold_time > self.hold_timeout:
                 self.hold_active = False
 
-                # Hold解除時は初期姿勢に戻す準備
-                self.last_q1_cmd = self.q1
-                self.last_q3_cmd = self.q3
-                self.last_q4_cmd = self.q4
+
 
                 rospy.loginfo("Hold released")
 
@@ -313,35 +326,6 @@ class YoubotCameraArmController:
         xy_dist = math.sqrt(vec[0] ** 2 + vec[1] ** 2)
 
         clearance = self.distance_to_arm1_capsules(camera_pos)
-
-        if clearance is not None:
-            rospy.loginfo_throttle(
-                1.0,
-                "Arm2Cam->Arm1EE dist=%.3f, Arm1 capsule clearance=%.3f",
-                dist_to_target,
-                clearance
-            )
-
-            if clearance < 0.0:
-                rospy.logwarn_throttle(
-                    1.0,
-                    "Arm2 camera is inside Arm1 capsule occupancy! clearance=%.3f",
-                    clearance
-                )
-            elif clearance < 0.05:
-                rospy.logwarn_throttle(
-                    1.0,
-                    "Arm2 camera is close to Arm1. clearance=%.3f",
-                    clearance
-                )
-
-        rospy.loginfo_throttle(
-            1.0,
-            "Hold target Arm1 EE: x=%.3f, y=%.3f, z=%.3f",
-            target_x,
-            target_y,
-            target_z
-        )
 
         # =========================
         # q1: horizontal look-at
@@ -479,19 +463,6 @@ class YoubotCameraArmController:
         q4_new = np.clip(q4_new, self.q4_min, self.q4_max)
 
         self.last_q4_cmd = q4_new
-
-        rospy.loginfo_throttle(
-            1.0,
-            "Look-at adaptive: mode=%s, yaw=%.3f, pitch=%.3f, height_error=%.3f, q1=%.1f deg, q3=%.1f deg, q4=%.1f deg, q4_target=%.1f deg",
-            mode_name,
-            yaw,
-            pitch,
-            height_error,
-            RadToDeg(q1_new),
-            RadToDeg(q3_new),
-            RadToDeg(q4_new),
-            RadToDeg(q4_target)
-        )
 
         return [q1_new, self.q2, q3_new, q4_new, self.q5]
 
@@ -635,13 +606,26 @@ class YoubotCameraArmController:
 
         self.place_ee_pose = ee_pose
         self.place_ee_pub.publish(ee_pose)
+        
+        sa = np.zeros(3, dtype=np.float64)
+
+        sa[0] = self.p_current[0] - float(ee_pose.pose.position.x)
+        sa[1] = self.p_current[1] - float(ee_pose.pose.position.y)
+        sa[2] = self.p_current[2] - float(ee_pose.pose.position.z)
 
         rospy.loginfo(
-            "Recorded Arm1 EE at Place: x=%.3f, y=%.3f, z=%.3f",
-            ee_pose.pose.position.x,
-            ee_pose.pose.position.y,
-            ee_pose.pose.position.z
+            "P_current - EE: dx=%.3f, dy=%.3f, dz=%.3f",
+            sa[0],
+            sa[1],
+            sa[2]
         )
+
+        # rospy.loginfo(
+        #     "Recorded Arm1 EE at Place: x=%.3f, y=%.3f, z=%.3f",
+        #     ee_pose.pose.position.x,
+        #     ee_pose.pose.position.y,
+        #     ee_pose.pose.position.z
+        # )
 
 ###############################メインループ#######################################
 
@@ -660,14 +644,15 @@ class YoubotCameraArmController:
                     cand = self.calc_arm2_look_at_joints(ee_pose)
                     self.publish_arm2_joints(cand)
 
-            else:
-                cand = [self.q1, self.q2, self.q3, self.q4, self.q5]
+            # else:
+                # cand = [self.q1, self.q2, self.q3, self.q4, self.q5]
 
-                self.last_q1_cmd = self.q1
-                self.last_q3_cmd = self.q3
-                self.last_q4_cmd = self.q4
+                # self.last_q1_cmd = self.q1
+                # self.last_q3_cmd = self.q3
+                # self.last_q4_cmd = self.q4
 
-                self.publish_arm2_joints(cand)
+                # self.publish_arm2_joints(cand)
+                # print("test")
 
             rate.sleep()
     

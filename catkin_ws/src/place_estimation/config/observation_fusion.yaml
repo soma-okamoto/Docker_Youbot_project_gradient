@@ -1,0 +1,52 @@
+# observation_fusion.yaml
+# 初期開発版: 学習なし、固定バイアス・固定共分散
+
+# Input
+pred_topic: /P_pred
+pred_cov_topic: /Sigma_pred
+yolo_topic: /P_yolo
+meta_topic: /P_meta
+
+# Output
+place_topic: /P_place
+place_cov_topic: /Sigma_place
+status_topic: /observation_status
+distance_topic: /observation_distances
+
+expected_frame: base_footprint
+output_frame: base_footprint
+
+# YOLO
+enable_yolo: true
+yolo_xyz_indices: [0, 1, 2]
+
+# Metaは型決定後に変更
+# disabled / float32_multi_array / pose_stamped
+meta_message_type: disabled
+meta_xyz_indices: [0, 1, 2]
+
+# Fixed biases [m]
+bias_yolo: [0.0, 0.0, 0.0]
+bias_meta: [0.0, 0.0, 0.0]
+
+# Fixed standard deviations [m]（暫定値）
+sigma_yolo: [0.03, 0.03, 0.04]
+sigma_meta: [0.02, 0.02, 0.03]
+
+# 3次元95%カイ二乗ゲート
+gate_yolo: 7.815
+gate_meta: 7.815
+gate_yolo_meta: 7.815
+
+# 片方しか来ない場合は、この時間後に届いた観測だけで更新
+observation_timeout: 2.0
+
+# 固定CI重み
+# 事前 + 片方の観測
+single_weight_prior: 0.5
+
+# 事前 + YOLO + Meta
+# [w_prior, w_yolo, w_meta]
+both_weights: [0.34, 0.33, 0.33]
+
+min_variance: 1.0e-8

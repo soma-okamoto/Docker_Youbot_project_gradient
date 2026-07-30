@@ -1,0 +1,107 @@
+# observation_fusion.yaml
+#
+# 学習なし・固定誤差モデル
+# YOLO / Meta 両方の可変個数候補に対応
+
+# Inputs
+pred_topic: /P_pred
+pred_cov_topic: /Sigma_pred
+yolo_topic: /P_yolo
+meta_topic: /P_meta
+
+# Final outputs
+place_topic: /P_place
+place_cov_topic: /Sigma_place
+status_topic: /observation_status
+
+# [selected YOLO d^2, selected Meta d^2, YOLO-Meta d^2]
+distance_topic: /observation_distances
+
+# YOLO candidate diagnostics
+yolo_distances_topic: /yolo_candidate_distances
+yolo_scores_topic: /yolo_candidate_scores
+yolo_selected_index_topic: /yolo_selected_index
+
+# Meta candidate diagnostics
+meta_distances_topic: /meta_candidate_distances
+meta_scores_topic: /meta_candidate_scores
+meta_selected_index_topic: /meta_selected_index
+
+# Coordinate frame
+expected_frame: base_footprint
+output_frame: base_footprint
+
+# ---------------------------------------------------------------------------
+# YOLO
+# ---------------------------------------------------------------------------
+enable_yolo: true
+
+# packed:
+#   1メッセージに全候補を格納
+# stream:
+#   observation_timeout内に届く候補メッセージを蓄積
+yolo_input_mode: packed
+# yolo_input_mode: stream
+
+# [x1,y1,z1, x2,y2,z2, ...]
+# yolo_candidate_stride: 3
+yolo_candidate_stride: 12
+yolo_xyz_indices: [0, 1, 2]
+max_yolo_candidates: 200
+yolo_covariance_indices: [3, 4, 5, 6, 7, 8, 9, 10, 11]
+
+# ---------------------------------------------------------------------------
+# Meta
+# ---------------------------------------------------------------------------
+
+# 未確定なら disabled のままにする。
+# 候補配列なら float32_multi_array。
+# 1候補ずつPoseStampedで来るなら pose_stamped。
+# meta_message_type: disabled
+meta_message_type: float32_multi_array
+
+# MetaがFloat32MultiArrayの場合:
+# packed:
+#   [x1,y1,z1, x2,y2,z2, ...] を1メッセージで受信
+# stream:
+#   複数メッセージをタイムアウトまで蓄積
+#
+# MetaがPoseStampedの場合:
+# 複数候補なら stream を指定する。
+# meta_input_mode: packed
+meta_input_mode: stream
+
+meta_candidate_stride: 3
+meta_xyz_indices: [0, 1, 2]
+max_meta_candidates: 200
+
+# ---------------------------------------------------------------------------
+# Fixed error parameters
+# ---------------------------------------------------------------------------
+bias_yolo: [0.0, 0.0, 0.0]
+bias_meta: [0.0, 0.0, 0.0]
+
+sigma_yolo: [0.03, 0.03, 0.04]
+sigma_meta: [0.02, 0.02, 0.03]
+
+# ---------------------------------------------------------------------------
+# Gating
+# ---------------------------------------------------------------------------
+# 3D chi-square 95%
+gate_yolo: 7.815
+gate_meta: 7.815
+gate_yolo_meta: 7.815
+
+# ---------------------------------------------------------------------------
+# Timing and fixed CI weights
+# ---------------------------------------------------------------------------
+# observation_timeout: 2.0
+observation_timeout: 3.0
+
+# Prior + one selected observation
+single_weight_prior: 0.5
+
+# [prior, selected YOLO, selected Meta]
+both_weights: [0.34, 0.33, 0.33]
+
+min_variance: 1.0e-8

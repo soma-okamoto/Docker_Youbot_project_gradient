@@ -1,0 +1,9 @@
+<launch>
+  <node pkg="place_estimation"
+        type="distribution_visualization_node.py"
+        name="distribution_visualization_node"
+        output="screen">
+    <rosparam command="load"
+              file="$(find place_estimation)/config/distribution_visualization.yaml" />
+  </node>
+</launch>

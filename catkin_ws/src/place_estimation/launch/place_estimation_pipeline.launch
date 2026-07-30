@@ -1,0 +1,13 @@
+<launch>
+  <include file="$(find place_estimation)/launch/prior_distribution.launch" />
+
+  <node pkg="place_estimation"
+        type="observation_fusion_node_multi_sensor.py"
+        name="observation_fusion_node_multi_senser"
+        output="screen">
+    <rosparam command="load"
+              file="$(find place_estimation)/config/observation_fusion_multi_sensor.yaml" />
+  </node>
+
+  <include file="$(find place_estimation)/launch/distribution_visualization.launch" />
+</launch>

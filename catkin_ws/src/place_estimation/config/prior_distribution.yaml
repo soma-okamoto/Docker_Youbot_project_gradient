@@ -1,0 +1,50 @@
+# prior_distribution.yaml
+
+# Topics
+current_topic: /P_current
+tf_topic: /P_tf
+pred_topic: /P_pred
+cov_topic: /Sigma_pred
+
+# /P_current has no Header.
+# Both inputs must already be expressed in this frame.
+expected_frame: base_footprint
+output_frame: base_footprint
+
+# Initial bias [m]
+# At the first run, use zero bias.
+bias_current: [0.0, 0.0, 0.0]
+bias_tf: [0.0, 0.0, 0.0]
+
+# Initial standard deviation [m]
+# These are provisional defaults and should later be replaced
+# by experimentally estimated or sequentially learned values.
+sigma_current: [0.05, 0.05, 0.05]
+sigma_tf: [0.02, 0.02, 0.03]
+
+# Instead of sigma_*, a full 3x3 covariance can be supplied
+# in row-major order. Uncomment when needed.
+#
+# covariance_current:
+#   [0.0025, 0.0, 0.0,
+#    0.0, 0.0025, 0.0,
+#    0.0, 0.0, 0.0025]
+#
+# covariance_tf:
+#   [0.0004, 0.0, 0.0,
+#    0.0, 0.0004, 0.0,
+#    0.0, 0.0, 0.0009]
+
+# CI weight
+# optimize: search omega that minimizes trace or determinant
+# fixed: use ci_fixed_weight
+# ci_weight_mode: optimize
+ci_weight_mode: fixed
+ci_fixed_weight: 0.5
+ci_weight_min: 0.0
+ci_weight_max: 1.0
+ci_weight_step: 0.01
+ci_objective: trace
+
+# Numerical lower bound for covariance eigenvalues [m^2]
+min_variance: 1.0e-8

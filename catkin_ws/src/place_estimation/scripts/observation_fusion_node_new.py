@@ -11,13 +11,17 @@ observation_fusion_node.py
 
 初期開発版:
 - 学習機能なし
-- YOLOは候補ごとの受信共分散を使用（不正時のみ固定共分散へフォールバック）
-- Metaのバイアス・共分散と観測間CI重みは固定ROSパラメータ
+- YOLOは候補ごとの受信共分散を使用。不正・過大な共分散の候補は棄却
+- Metaは共分散付き配列にも対応。位置のみの入力では固定共分散を使用
+- バイアスと観測間CI重みは固定ROSパラメータ
 - YOLOとMetaの両方で可変個数候補に対応
 - 事前とのマハラノビス距離は不整合の診断と、曖昧な単独観測の候補対応に使用
 - 両センサの候補が整合する場合は最も整合する組を選び、観測同士をCI融合
-- 観測間が不整合なら設定した優先センサの観測を採用
-- 有効な観測がないときだけ事前分布へフォールバック
+- 観測間が不整合なら共分散のtraceが小さい観測を採用。同等なら事前へ戻す
+- max_std_yolo / max_std_meta: 最大主軸標準偏差の上限[m]、暫定既定値0.10
+- 共分散付きMeta: meta_candidate_stride=12、meta_covariance_indices=[3,...,11]
+- 位置のみのMeta入力では時間的な安定性を推定しない
+- 有効な観測がない場合、または競合時の不確かさが同等の場合は事前分布へ戻す
 
 候補入力モード:
 - packed:
@@ -169,6 +173,22 @@ class ObservationFusionNode:
             self.meta_candidate_stride,
         )
 
+        # Empty indices preserve the existing XYZ-only Meta input.
+        self.meta_covariance_indices = None
+        if rospy.get_param("~meta_covariance_indices", []):
+            self.meta_covariance_indices = self._load_n_indices(
+                "~meta_covariance_indices", list(range(3, 12)), 9
+            )
+            self._validate_indices(
+                "~meta_covariance_indices",
+                self.meta_covariance_indices,
+                self.meta_candidate_stride,
+            )
+            if self.meta_message_type != "float32_multi_array":
+                raise ValueError(
+                    "~meta_covariance_indices requires float32_multi_array"
+                )
+
         self.max_yolo_candidates = self._load_positive_int(
             "~max_yolo_candidates", 200
         )
@@ -182,7 +202,7 @@ class ObservationFusionNode:
         self.min_variance = float(
             rospy.get_param("~min_variance", 1.0e-8)
         )
-        if self.min_variance <= 0.0:
+        if not np.isfinite(self.min_variance) or self.min_variance <= 0.0:
             raise ValueError("~min_variance must be positive")
 
         self.bias_yolo = self._load_vector(
@@ -248,12 +268,17 @@ class ObservationFusionNode:
         self.weight_yolo = float(
             self.both_weights[1] / observation_weight_sum
         )
-        self.mismatch_preferred_sensor = str(
-            rospy.get_param("~mismatch_preferred_sensor", "yolo")
-        ).lower()
-        if self.mismatch_preferred_sensor not in {"yolo", "meta"}:
-            raise ValueError(
-                "~mismatch_preferred_sensor must be yolo or meta"
+        self.max_std_yolo = self._load_positive_float("~max_std_yolo", 0.10)
+        self.max_std_meta = self._load_positive_float("~max_std_meta", 0.10)
+        if rospy.has_param("~mismatch_preferred_sensor"):
+            rospy.logwarn(
+                "~mismatch_preferred_sensor is ignored; conflicting observations "
+                "are selected by covariance trace"
+            )
+        if self.enable_meta and self.meta_covariance_indices is None:
+            rospy.logwarn(
+                "Meta uses fixed covariance; temporal stability is not measured. "
+                "Send covariance with ~meta_covariance_indices to reflect changes."
             )
 
         # ================================================================
@@ -278,6 +303,7 @@ class ObservationFusionNode:
         self.yolo_candidates: List[np.ndarray] = []
         self.yolo_covariances: List[np.ndarray] = []
         self.meta_candidates: List[np.ndarray] = []
+        self.meta_covariances: List[np.ndarray] = []
         self.timer = None
 
         # ================================================================
@@ -413,6 +439,13 @@ class ObservationFusionNode:
         value = int(rospy.get_param(name, default))
         if value <= 0:
             raise ValueError(f"{name} must be positive")
+        return value
+
+    @staticmethod
+    def _load_positive_float(name: str, default: float) -> float:
+        value = float(rospy.get_param(name, default))
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(f"{name} must be finite and positive")
         return value
 
     @staticmethod
@@ -577,88 +610,41 @@ class ObservationFusionNode:
         self,
         message: Float32MultiArray,
     ) -> Tuple[np.ndarray, List[np.ndarray]]:
+        return self._parse_covariance_candidate_array(
+            message, self.yolo_topic, self.yolo_candidate_stride,
+            self.yolo_xyz_indices, self.yolo_covariance_indices, self.bias_yolo,
+        )
+
+    def _parse_covariance_candidate_array(
+        self,
+        message: Float32MultiArray,
+        topic: str,
+        stride: int,
+        xyz_indices: Sequence[int],
+        covariance_indices: Sequence[int],
+        bias: np.ndarray,
+    ) -> Tuple[np.ndarray, List[np.ndarray]]:
         values = np.asarray(message.data, dtype=float)
-
-        if values.size == 0:
-            return (
-                np.empty((0, 3), dtype=float),
-                [],
-            )
-
-        stride = self.yolo_candidate_stride
         if values.size % stride != 0:
             raise ValueError(
-                f"{self.yolo_topic}: data length {values.size} "
+                f"{topic}: data length {values.size} "
                 f"is not divisible by candidate stride {stride}"
             )
-
         records = values.reshape(-1, stride)
-        positions = []
-        covariances = []
-        discarded_count = 0
-        fallback_count = 0
-
-        for record in records:
-            position = record[list(self.yolo_xyz_indices)]
-
-            if not np.all(np.isfinite(position)):
-                discarded_count += 1
-                continue
-
-            covariance_values = record[
-                list(self.yolo_covariance_indices)
-            ]
-
-            use_fallback = (
-                covariance_values.size != 9
-                or not np.all(np.isfinite(covariance_values))
-            )
-
-            if not use_fallback:
-                covariance_raw = covariance_values.reshape(3, 3)
-                covariance_raw = 0.5 * (
-                    covariance_raw + covariance_raw.T
-                )
-
-                # 分散が0以下のデータは受信共分散として採用しない。
-                use_fallback = bool(
-                    np.any(np.diag(covariance_raw) <= 0.0)
-                )
-
-            if use_fallback:
-                covariance = self.cov_yolo.copy()
-                fallback_count += 1
-            else:
-                covariance = self._regularize(covariance_raw)
-
-            positions.append(
-                position.astype(float) - self.bias_yolo
-            )
-            covariances.append(covariance)
-
-        if discarded_count > 0:
+        positions = records[:, list(xyz_indices)] - bias.reshape(1, 3)
+        finite_mask = np.all(np.isfinite(positions), axis=1)
+        if not np.all(finite_mask):
             rospy.logwarn(
-                "%s: discarded %d candidates containing "
-                "invalid XYZ values",
-                self.yolo_topic,
-                discarded_count,
+                "%s: discarded %d candidates containing invalid XYZ values",
+                topic, int(np.count_nonzero(~finite_mask)),
             )
-
-        if fallback_count > 0:
-            rospy.logwarn(
-                "%s: used fixed YOLO covariance for %d candidates "
-                "because the received covariance was invalid",
-                self.yolo_topic,
-                fallback_count,
-            )
-
-        if not positions:
-            return (
-                np.empty((0, 3), dtype=float),
-                [],
-            )
-
-        return np.vstack(positions), covariances
+        # Keep covariance and position indices aligned. Selection rejects
+        # invalid/high covariance and reports distance=inf, score=0.
+        covariances = [
+            record[list(covariance_indices)].reshape(3, 3).copy()
+            for record in records[finite_mask]
+        ]
+        return positions[finite_mask], covariances
 
     def _parse_candidate_array(
         self,
@@ -780,6 +766,7 @@ class ObservationFusionNode:
         self.yolo_candidates = []
         self.yolo_covariances = []
         self.meta_candidates = []
+        self.meta_covariances = []
 
         self.timer = rospy.Timer(
             rospy.Duration(self.observation_timeout),
@@ -822,13 +809,21 @@ class ObservationFusionNode:
         self, message: Float32MultiArray
     ) -> None:
         try:
-            candidates = self._parse_candidate_array(
-                message=message,
-                topic=self.meta_topic,
-                stride=self.meta_candidate_stride,
-                xyz_indices=self.meta_xyz_indices,
-                bias=self.bias_meta,
-            )
+            covariances = None
+            if self.meta_covariance_indices is not None:
+                candidates, covariances = self._parse_covariance_candidate_array(
+                    message, self.meta_topic, self.meta_candidate_stride,
+                    self.meta_xyz_indices, self.meta_covariance_indices,
+                    self.bias_meta,
+                )
+            else:
+                candidates = self._parse_candidate_array(
+                    message=message,
+                    topic=self.meta_topic,
+                    stride=self.meta_candidate_stride,
+                    xyz_indices=self.meta_xyz_indices,
+                    bias=self.bias_meta,
+                )
         except ValueError as error:
             rospy.logerr_throttle(2.0, str(error))
             return
@@ -836,6 +831,7 @@ class ObservationFusionNode:
         self._accept_candidates(
             sensor="meta",
             candidates=candidates,
+            covariances=covariances,
         )
 
     def _meta_pose_cb(self, message: PoseStamped) -> None:
@@ -894,29 +890,25 @@ class ObservationFusionNode:
                 covariance_target = self.yolo_covariances
                 maximum = self.max_yolo_candidates
 
-                if covariances is None:
-                    covariances = [
-                        self.cov_yolo.copy()
-                        for _ in range(candidates.shape[0])
-                    ]
-
-                if len(covariances) != candidates.shape[0]:
-                    rospy.logerr(
-                        "YOLO candidate/covariance count mismatch: "
-                        "%d candidates, %d covariances",
-                        candidates.shape[0],
-                        len(covariances),
-                    )
-                    return
+                default_covariance = self.cov_yolo
 
             elif sensor == "meta":
                 mode = self.meta_input_mode
                 received = self.meta_received
                 target = self.meta_candidates
-                covariance_target = None
+                covariance_target = self.meta_covariances
                 maximum = self.max_meta_candidates
+                default_covariance = self.cov_meta
             else:
                 raise ValueError(f"unknown sensor: {sensor}")
+
+            if covariances is None:
+                covariances = [
+                    default_covariance.copy() for _ in range(candidates.shape[0])
+                ]
+            if len(covariances) != candidates.shape[0]:
+                rospy.logerr("%s candidate/covariance count mismatch", sensor)
+                return
 
             if mode == "packed" and received:
                 rospy.logwarn_throttle(
@@ -953,10 +945,7 @@ class ObservationFusionNode:
             for index, candidate in enumerate(candidates):
                 target.append(candidate.copy())
 
-                if covariance_target is not None:
-                    covariance_target.append(
-                        self._regularize(covariances[index])
-                    )
+                covariance_target.append(covariances[index].copy())
 
             if sensor == "yolo":
                 self.yolo_received = True
@@ -1025,14 +1014,33 @@ class ObservationFusionNode:
             @ np.linalg.solve(covariance, residual)
         )
 
+    def _stable_covariance(
+        self, covariance: np.ndarray, max_std: float,
+    ) -> Optional[np.ndarray]:
+        """Reject unknown/non-PSD uncertainty and excessive principal variance."""
+        covariance = np.asarray(covariance, dtype=float).reshape(3, 3)
+        if not np.all(np.isfinite(covariance)):
+            return None
+        covariance = 0.5 * (covariance + covariance.T)
+        if np.any(np.diag(covariance) <= 0.0):
+            return None
+        values = np.linalg.eigvalsh(covariance)
+        if values[0] < -self.min_variance:
+            return None
+        if np.sqrt(max(values[-1], self.min_variance)) > max_std:
+            return None
+        return self._regularize(covariance)
+
     def _select_candidate(
         self,
         candidates_list: List[np.ndarray],
         observation_covariance: np.ndarray,
         gate_threshold: float,
+        max_std: float,
         candidate_covariances: Optional[
             List[np.ndarray]
         ] = None,
+        sensor: str = "observation",
     ) -> Tuple[
         Optional[np.ndarray],
         Optional[np.ndarray],
@@ -1067,12 +1075,19 @@ class ObservationFusionNode:
                 )
             covariances = candidate_covariances
 
-        distances = np.empty(candidates.shape[0], dtype=float)
+        distances = np.full(candidates.shape[0], np.inf, dtype=float)
 
         for index, candidate in enumerate(candidates):
-            candidate_covariance = self._regularize(
-                covariances[index]
+            candidate_covariance = self._stable_covariance(
+                covariances[index], max_std
             )
+            if candidate_covariance is None:
+                rospy.logwarn(
+                    "Operation %d: rejected %s candidate %d: invalid covariance "
+                    "or principal std exceeds %.4f m",
+                    self.operation_id, sensor, index, max_std,
+                )
+                continue
             innovation_covariance = self._regularize(
                 self.prior_cov + candidate_covariance
             )
@@ -1083,6 +1098,8 @@ class ObservationFusionNode:
             )
 
         scores = np.exp(-0.5 * distances)
+        if not np.any(np.isfinite(distances)):
+            return None, None, False, np.nan, -1, distances, scores
 
         best_overall_index = int(np.argmin(distances))
         best_overall_distance = float(
@@ -1121,11 +1138,21 @@ class ObservationFusionNode:
     ) -> Optional[Tuple[int, int, float]]:
         """Find the most mutually consistent YOLO/Meta candidate pair."""
         best = None
+        meta_covariances = [
+            self._stable_covariance(covariance, self.max_std_meta)
+            for covariance in self.meta_covariances
+        ]
         for yi, yolo in enumerate(self.yolo_candidates):
+            yolo_cov = self._stable_covariance(
+                self.yolo_covariances[yi], self.max_std_yolo
+            )
+            if yolo_cov is None:
+                continue
             for mi, meta in enumerate(self.meta_candidates):
-                covariance = self._regularize(
-                    self.yolo_covariances[yi] + self.cov_meta
-                )
+                meta_cov = meta_covariances[mi]
+                if meta_cov is None:
+                    continue
+                covariance = self._regularize(yolo_cov + meta_cov)
                 d2 = self._mahalanobis_squared(yolo - meta, covariance)
                 if np.isfinite(d2) and (best is None or d2 < best[2]):
                     best = (yi, mi, d2)
@@ -1210,6 +1237,8 @@ class ObservationFusionNode:
                 candidate_covariances=self.yolo_covariances,
                 observation_covariance=self.cov_yolo,
                 gate_threshold=self.gate_yolo,
+                max_std=self.max_std_yolo,
+                sensor="YOLO",
             )
 
             (
@@ -1222,8 +1251,11 @@ class ObservationFusionNode:
                 meta_scores,
             ) = self._select_candidate(
                 candidates_list=self.meta_candidates,
+                candidate_covariances=self.meta_covariances,
                 observation_covariance=self.cov_meta,
                 gate_threshold=self.gate_meta,
+                max_std=self.max_std_meta,
+                sensor="Meta",
             )
 
             position = self.prior.copy()
@@ -1238,9 +1270,13 @@ class ObservationFusionNode:
             if pair is not None:
                 yolo_index, meta_index, d2_pair = pair
                 selected_yolo = self.yolo_candidates[yolo_index].copy()
-                selected_yolo_cov = self.yolo_covariances[yolo_index].copy()
+                selected_yolo_cov = self._regularize(
+                    self.yolo_covariances[yolo_index]
+                )
                 selected_meta = self.meta_candidates[meta_index].copy()
-                selected_meta_cov = self.cov_meta.copy()
+                selected_meta_cov = self._regularize(
+                    self.meta_covariances[meta_index]
+                )
                 d2_yolo = float(yolo_distances[yolo_index])
                 d2_meta = float(meta_distances[meta_index])
 
@@ -1273,7 +1309,13 @@ class ObservationFusionNode:
                         self.weight_yolo,
                     )
                     status = "both_valid"
-                elif self.mismatch_preferred_sensor == "yolo":
+                elif np.isclose(
+                    np.trace(selected_yolo_cov), np.trace(selected_meta_cov),
+                    rtol=1.0e-6, atol=1.0e-12,
+                ):
+                    # Equal uncertainty gives no evidence to prefer a sensor.
+                    status = "sensor_mismatch_equal_uncertainty_prior_used"
+                elif np.trace(selected_yolo_cov) < np.trace(selected_meta_cov):
                     position = selected_yolo.copy()
                     covariance = selected_yolo_cov.copy()
                     status = (
@@ -1476,6 +1518,7 @@ class ObservationFusionNode:
         self.yolo_candidates = []
         self.yolo_covariances = []
         self.meta_candidates = []
+        self.meta_covariances = []
         self.timer = None
 
 

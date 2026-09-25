@@ -1,0 +1,24 @@
+test_bad_or_empty_meta_covariance_messages (test_observation_fusion_stability.StabilityTests) ... ok
+test_both_unstable_use_prior (test_observation_fusion_stability.StabilityTests) ... ok
+test_consistent_observations_still_fuse (test_observation_fusion_stability.StabilityTests) ... ok
+test_equal_uncertainty_conflict_uses_prior (test_observation_fusion_stability.StabilityTests) ... ok
+test_gate_uses_principal_variance_including_correlations (test_observation_fusion_stability.StabilityTests) ... ok
+test_invalid_covariance_does_not_hide_valid_candidate (test_observation_fusion_stability.StabilityTests) ... ok
+test_invalid_threshold_configuration_is_rejected (test_observation_fusion_stability.StabilityTests) ... ok
+test_invalid_yolo_input_covariance_is_not_replaced_by_fixed_covariance (test_observation_fusion_stability.StabilityTests) ... ok
+test_large_covariance_rejected_even_when_positions_agree (test_observation_fusion_stability.StabilityTests) ... ok
+test_legacy_meta_pose_input_uses_fixed_covariance (test_observation_fusion_stability.StabilityTests) ... ok
+test_legacy_meta_xyz_input_uses_fixed_covariance (test_observation_fusion_stability.StabilityTests) ... ok
+test_meta_covariance_configuration_is_validated (test_observation_fusion_stability.StabilityTests) ... ok
+test_meta_covariance_input_affects_actual_selection (test_observation_fusion_stability.StabilityTests) ... ok
+test_meta_stream_keeps_covariances_aligned_and_truncates_together (test_observation_fusion_stability.StabilityTests) ... ok
+test_mismatch_uses_more_stable_sensor_in_both_directions (test_observation_fusion_stability.StabilityTests) ... ok
+test_no_observation_uses_prior (test_observation_fusion_stability.StabilityTests) ... ok
+test_rejected_candidate_cannot_reenter_pair_search (test_observation_fusion_stability.StabilityTests) ... ok
+test_single_unstable_uses_prior (test_observation_fusion_stability.StabilityTests) ... ok
+test_threshold_boundary_and_sensor_specific_configuration (test_observation_fusion_stability.StabilityTests) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.086s
+
+OK

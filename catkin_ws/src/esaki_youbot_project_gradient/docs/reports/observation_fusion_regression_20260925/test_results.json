@@ -1,0 +1,108 @@
+{
+  "started_at_jst": "2026-09-25T15:52:59+09:00",
+  "elapsed_process_seconds": 0.32428899399997135,
+  "command": [
+    "/usr/bin/python3",
+    "-B",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "/home/dars/Docker_ws/Docker_Youbot_project_gradient/catkin_ws/src/place_estimation/tests",
+    "-p",
+    "test_observation_fusion_stability.py",
+    "-v"
+  ],
+  "working_directory": "/home/dars/Docker_ws/Docker_Youbot_project_gradient/catkin_ws/src/esaki_youbot_project_gradient",
+  "package_root": "/home/dars/Docker_ws/Docker_Youbot_project_gradient/catkin_ws/src/place_estimation",
+  "python": "3.8.10",
+  "numpy": "1.24.4",
+  "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.29",
+  "returncode": 0,
+  "tests": [
+    {
+      "name": "test_bad_or_empty_meta_covariance_messages",
+      "result": "ok"
+    },
+    {
+      "name": "test_both_unstable_use_prior",
+      "result": "ok"
+    },
+    {
+      "name": "test_consistent_observations_still_fuse",
+      "result": "ok"
+    },
+    {
+      "name": "test_equal_uncertainty_conflict_uses_prior",
+      "result": "ok"
+    },
+    {
+      "name": "test_gate_uses_principal_variance_including_correlations",
+      "result": "ok"
+    },
+    {
+      "name": "test_invalid_covariance_does_not_hide_valid_candidate",
+      "result": "ok"
+    },
+    {
+      "name": "test_invalid_threshold_configuration_is_rejected",
+      "result": "ok"
+    },
+    {
+      "name": "test_invalid_yolo_input_covariance_is_not_replaced_by_fixed_covariance",
+      "result": "ok"
+    },
+    {
+      "name": "test_large_covariance_rejected_even_when_positions_agree",
+      "result": "ok"
+    },
+    {
+      "name": "test_legacy_meta_pose_input_uses_fixed_covariance",
+      "result": "ok"
+    },
+    {
+      "name": "test_legacy_meta_xyz_input_uses_fixed_covariance",
+      "result": "ok"
+    },
+    {
+      "name": "test_meta_covariance_configuration_is_validated",
+      "result": "ok"
+    },
+    {
+      "name": "test_meta_covariance_input_affects_actual_selection",
+      "result": "ok"
+    },
+    {
+      "name": "test_meta_stream_keeps_covariances_aligned_and_truncates_together",
+      "result": "ok"
+    },
+    {
+      "name": "test_mismatch_uses_more_stable_sensor_in_both_directions",
+      "result": "ok"
+    },
+    {
+      "name": "test_no_observation_uses_prior",
+      "result": "ok"
+    },
+    {
+      "name": "test_rejected_candidate_cannot_reenter_pair_search",
+      "result": "ok"
+    },
+    {
+      "name": "test_single_unstable_uses_prior",
+      "result": "ok"
+    },
+    {
+      "name": "test_threshold_boundary_and_sensor_specific_configuration",
+      "result": "ok"
+    }
+  ],
+  "file_sha256": {
+    "scripts/observation_fusion_node_new.py": "182cf12ec9795d4b434798c9e85f6cdb6f553b102eb249fe236db2993e32faa4",
+    "tests/test_observation_fusion_stability.py": "5bf62703d5b34ee2c7fe88136492ead3df65401d718ca7b2b3b28ef201ea55f0",
+    "config/observation_fusion_multi_sensor.yaml": "9c519a9eb2280119c6ca1b42856cc641e6f88b8a0c9337b09e4ce657e8cd3fb4"
+  },
+  "source_changed_during_run": [],
+  "git_head": "9e34c96fb1e65b05618f2805269333b17e075e69",
+  "git_status": " M config/observation_fusion_multi_sensor.yaml\n M scripts/observation_fusion_node_new.py\n?? ../esaki_youbot_project_gradient/docs/\n?? tests/\n"
+}

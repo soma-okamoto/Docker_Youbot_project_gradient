@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-observation_fusion_node.py
+Legacy: observation_fusion_node.py
 
 事前分布 N(P_pred, Sigma_pred) を、利用可能なYOLO / Meta観測で更新し、
 最終配置位置 N(P_place, Sigma_place) を出力するROS1ノード。

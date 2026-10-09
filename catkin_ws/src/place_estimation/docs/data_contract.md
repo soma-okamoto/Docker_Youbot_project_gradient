@@ -1,5 +1,8 @@
 # Local registration data contract
 
+For the node, launch, topic, and configuration overview, see
+[system_architecture.md](system_architecture.md).
+
 The ROS package estimates and publishes the three-dimensional bottle-center
 position. Applying that position to an MR object is the Unity application's
 responsibility.

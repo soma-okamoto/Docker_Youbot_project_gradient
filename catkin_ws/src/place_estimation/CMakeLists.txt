@@ -19,7 +19,6 @@ catkin_package(
 catkin_install_python(
   PROGRAMS
     scripts/prior_distribution_node.py
-    scripts/observation_fusion_node_multi_sensor.py
     scripts/observation_fusion_node_new.py
     scripts/distribution_visualization_node.py
     evaluation/kl_evaluation_node.py

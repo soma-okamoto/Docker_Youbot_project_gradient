@@ -1,7 +1,11 @@
 ######################################################################################################
 #################################################################################################
 #ホスト側
+HomePC 
 
+
+
+################
 PC２
 
 export ROS_MASTER_URI=http://192.168.11.14:11311
@@ -159,6 +163,7 @@ rosrun esaki_youbot_project_gradient move_base_global_registration.py
 rosrun esaki_youbot_project_gradient afine_transformation.py
 
 
+#####rezistration
 roslaunch place_estimation place_estimation_pipeline.launch
 
 
@@ -176,7 +181,6 @@ export ROS_IP=192.168.1.23
 export ROS_MASTER_URI=http://192.168.1.23:11311
 source devel/setup.bash
 
-cd src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet/
 
 cd /home/dars/catkin_ws/src/Realsense_yolov5_Deepsort/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
 
@@ -196,12 +200,13 @@ cd /home/dars/catkin_ws/src/Realsense_yolov5_Deepsort/Yolov5_StrongSORT/Yolov5_S
 rosrun Yolov5_StrongSORT track_save_cpu.py --device 0
 rosrun Yolov5_StrongSORT track_save_cpu_fixed.py --device 0
 
+###ato kara zikkou
 rosrun Yolov5_StrongSORT track_P_yolo.py --device 0
 
 
 
 rosrun Yolov5_StrongSORT track_save_gpu.py --device 0 \
-view_img
+  view_img
 
 # rosrun Yolov5_StrongSORT track.py --device cpu
 

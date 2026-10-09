@@ -10,6 +10,9 @@
 roslaunch place_estimation place_estimation_pipeline.launch
 ```
 
+予備実験では、同じパイプラインと必要な全トピックのbag記録をまとめて
+起動する`preliminary_experiment.launch`を使用します。
+
 ## 1. システム全体像
 
 ```mermaid
@@ -77,6 +80,9 @@ flowchart TD
         KL_C["config/kl_evaluation.yaml"]
         KL_LIB["evaluation/gaussian_kl.py<br/>evaluation/kl_trend.py"]
 
+        PRELIM["launch/preliminary_experiment.launch<br/>通常パイプライン + rosbag記録"]
+        ANALYZER["analysis/preliminary_experiment_analyzer.py<br/>CSV・JSON集計"]
+
         MAIN --> PL
         PL --> PN
         PL --> PC
@@ -93,6 +99,9 @@ flowchart TD
         KL_L --> KL_N
         KL_L --> KL_C
         KL_N --> KL_LIB
+
+        PRELIM --> MAIN
+        PRELIM -->|"記録したbag"| ANALYZER
     end
 
     subgraph LEGACY["legacy：履歴参照のみ"]
@@ -194,6 +203,8 @@ flowchart LR
 - バイアスは物理観測を1回採用した後から更新します。
 - 共分散は`learning_min_samples`以上から更新します。
 - 学習値は現在メモリ上にだけ保持され、ノード再起動時に初期化されます。
+- 更新のたびに学習サンプル数、バイアス、共分散を診断トピックへ
+  ラッチ配信するため、予備実験bagから学習履歴を復元できます。
 - `min_variance`は共分散固有値の数値的な下限です。
 
 ## 6. 観測選択の分岐
@@ -276,6 +287,16 @@ flowchart TD
 最後に記録された`/kl_adaptation_summary`を最終評価として扱います。
 `trend_min_samples`は実験の終了回数ではなく、傾向を判定するための
 最低サンプル数です。
+
+### 学習状態
+
+| トピック | 型 | 内容 |
+|---|---|---|
+| `/learning_sample_count` | `Int32` | 採用物理観測による累積学習回数 |
+| `/learned_bias_current` | `Float64MultiArray` | `[operation ID, sample count, bx, by, bz]` |
+| `/learned_bias_tf` | `Float64MultiArray` | `[operation ID, sample count, bx, by, bz]` |
+| `/learned_covariance_current` | `Float64MultiArray` | operation ID、sample count、行優先3x3共分散 |
+| `/learned_covariance_tf` | `Float64MultiArray` | operation ID、sample count、行優先3x3共分散 |
 
 ## 8. どこで何を設定するか
 
@@ -365,8 +386,13 @@ flowchart TD
 
 ```text
 place_estimation/
+├── analysis/
+│   ├── preliminary_experiment_analyzer.py    # bagからCSV・JSONを生成
+│   ├── preliminary_statistics.py             # 予備実験の統計処理
+│   └── README.md                              # 収集・解析手順
 ├── launch/
 │   ├── place_estimation_pipeline.launch      # 通常の全体起動
+│   ├── preliminary_experiment.launch         # パイプライン + bag記録
 │   ├── prior_distribution.launch             # 事前分布ノード
 │   ├── distribution_visualization.launch     # RVizマーカー
 │   └── kl_evaluation.launch                   # KL評価ノード
@@ -400,6 +426,7 @@ place_estimation/
     ├── test_prior_error_learning.py           # 逐次学習
     ├── test_gaussian_kl.py                    # KL数式
     ├── test_kl_trend.py                       # 傾向判定
+    ├── test_preliminary_statistics.py         # 予備実験集計
     └── ros_pipeline_smoke_test.py             # ROS結合テスト
 ```
 
@@ -435,18 +462,26 @@ rostopic echo /kl_evaluation_status
 rostopic echo -n 1 /kl_adaptation_summary
 ```
 
-### 実験記録
+### 予備実験の記録
 
 ```bash
-rosbag record -O local_registration_eval.bag \
-  /P_current /P_tf \
-  /P_pred /Sigma_pred \
-  /P_yolo /P_meta \
-  /P_place /Sigma_place \
-  /observation_status /observation_distances \
-  /used_physical_observation \
-  /kl_evaluation /kl_evaluation_status /kl_adaptation_summary
+roslaunch place_estimation preliminary_experiment.launch \
+  output_bag:=/保存先/preliminary_01
 ```
+
+試行数は指定せず、人の操作が終了した時点で`Ctrl-C`します。
+最初の操作は、端末に`Recording to '...bag'`と表示されてから開始します。
+
+### 予備実験bagの解析
+
+```bash
+rosrun place_estimation preliminary_experiment_analyzer.py \
+  /保存先/preliminary_01.bag \
+  /保存先/preliminary_01_analysis
+```
+
+`trials.csv`、`learning_history.csv`、`parameter_report.json`が生成されます。
+詳細は[予備実験データ収集・解析](../analysis/README.md)を参照してください。
 
 ## 11. 現在の注意点
 

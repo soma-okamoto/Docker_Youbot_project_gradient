@@ -1,0 +1,27 @@
+<launch>
+  <arg name="output_bag" default="/tmp/place_estimation_preliminary" />
+
+  <include file="$(find place_estimation)/launch/place_estimation_pipeline.launch" />
+
+  <node pkg="rosbag"
+        type="record"
+        name="preliminary_experiment_recorder"
+        output="screen"
+        required="true"
+        args="-O $(arg output_bag)
+              /P_current /P_tf
+              /P_pred /Sigma_pred
+              /P_yolo /P_meta
+              /P_place /Sigma_place
+              /observation_status /observation_distances
+              /yolo_candidate_distances /yolo_candidate_scores
+              /yolo_selected_index
+              /meta_candidate_distances /meta_candidate_scores
+              /meta_selected_index
+              /used_physical_observation
+              /learned_bias_current /learned_bias_tf
+              /learned_covariance_current /learned_covariance_tf
+              /learning_sample_count
+              /kl_evaluation /kl_evaluation_status
+              /kl_adaptation_summary" />
+</launch>

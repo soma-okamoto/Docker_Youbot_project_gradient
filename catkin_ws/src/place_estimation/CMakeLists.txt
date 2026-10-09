@@ -22,6 +22,7 @@ catkin_install_python(
     scripts/observation_fusion_node_new.py
     scripts/distribution_visualization_node.py
     evaluation/kl_evaluation_node.py
+    analysis/preliminary_experiment_analyzer.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
@@ -29,10 +30,11 @@ install(
   FILES
     evaluation/gaussian_kl.py
     evaluation/kl_trend.py
+    analysis/preliminary_statistics.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 install(
-  DIRECTORY launch config docs
+  DIRECTORY launch config docs analysis
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

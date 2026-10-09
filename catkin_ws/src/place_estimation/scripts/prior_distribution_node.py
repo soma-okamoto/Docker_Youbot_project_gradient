@@ -15,6 +15,13 @@ Output
   /P_pred     : geometry_msgs/PoseStamped
   /Sigma_pred : std_msgs/Float32MultiArray
                 [Sxx,Sxy,Sxz,Syx,Syy,Syz,Szx,Szy,Szz]
+  /learned_bias_current, /learned_bias_tf
+              : std_msgs/Float64MultiArray
+                [operation_id, sample_count, bx, by, bz]
+  /learned_covariance_current, /learned_covariance_tf
+              : std_msgs/Float64MultiArray
+                [operation_id, sample_count, 3x3 covariance row-major]
+  /learning_sample_count : std_msgs/Int32
 
 方針
   - P_current, P_tf は過去と平均しない。
@@ -29,7 +36,12 @@ from typing import Optional, Tuple
 import numpy as np
 import rospy
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
-from std_msgs.msg import Float32MultiArray, MultiArrayDimension
+from std_msgs.msg import (
+    Float32MultiArray,
+    Float64MultiArray,
+    Int32,
+    MultiArrayDimension,
+)
 
 
 class PriorDistributionNode:
@@ -43,6 +55,22 @@ class PriorDistributionNode:
         self.cov_topic = rospy.get_param("~cov_topic", "/Sigma_pred")
         self.used_observation_topic = rospy.get_param(
             "~used_observation_topic", "/used_physical_observation"
+        )
+        self.learned_bias_current_topic = rospy.get_param(
+            "~learned_bias_current_topic", "/learned_bias_current"
+        )
+        self.learned_bias_tf_topic = rospy.get_param(
+            "~learned_bias_tf_topic", "/learned_bias_tf"
+        )
+        self.learned_covariance_current_topic = rospy.get_param(
+            "~learned_covariance_current_topic",
+            "/learned_covariance_current",
+        )
+        self.learned_covariance_tf_topic = rospy.get_param(
+            "~learned_covariance_tf_topic", "/learned_covariance_tf"
+        )
+        self.learning_sample_count_topic = rospy.get_param(
+            "~learning_sample_count_topic", "/learning_sample_count"
         )
 
         # P_currentにはHeaderがないため、P_tfと同じ座標系であることを前提とする。
@@ -130,6 +158,36 @@ class PriorDistributionNode:
         )
         self.cov_pub = rospy.Publisher(
             self.cov_topic, Float32MultiArray, queue_size=10
+        )
+        self.learned_bias_current_pub = rospy.Publisher(
+            self.learned_bias_current_topic,
+            Float64MultiArray,
+            queue_size=10,
+            latch=True,
+        )
+        self.learned_bias_tf_pub = rospy.Publisher(
+            self.learned_bias_tf_topic,
+            Float64MultiArray,
+            queue_size=10,
+            latch=True,
+        )
+        self.learned_covariance_current_pub = rospy.Publisher(
+            self.learned_covariance_current_topic,
+            Float64MultiArray,
+            queue_size=10,
+            latch=True,
+        )
+        self.learned_covariance_tf_pub = rospy.Publisher(
+            self.learned_covariance_tf_topic,
+            Float64MultiArray,
+            queue_size=10,
+            latch=True,
+        )
+        self.learning_sample_count_pub = rospy.Publisher(
+            self.learning_sample_count_topic,
+            Int32,
+            queue_size=10,
+            latch=True,
         )
 
         self.current_sub = rospy.Subscriber(
@@ -549,6 +607,8 @@ class PriorDistributionNode:
                     sample_covariance_tf - average_used_covariance
                 )
 
+            self._publish_learning_state(operation_id)
+
             rospy.loginfo(
                 "Learned operation error from seq=%d: n=%d, "
                 "bias_current=%s, bias_tf=%s",
@@ -557,6 +617,41 @@ class PriorDistributionNode:
                 np.array2string(self.bias_current, precision=6),
                 np.array2string(self.bias_tf, precision=6),
             )
+
+    @staticmethod
+    def _learning_vector(
+        operation_id: int,
+        sample_count: int,
+        values: np.ndarray,
+    ) -> Float64MultiArray:
+        return Float64MultiArray(
+            data=[float(operation_id), float(sample_count)]
+            + np.asarray(values, dtype=float).reshape(-1).tolist()
+        )
+
+    def _publish_learning_state(self, operation_id: int) -> None:
+        """Publish the learned state for recording and offline calibration."""
+        self.learned_bias_current_pub.publish(
+            self._learning_vector(
+                operation_id, self.learning_count, self.bias_current
+            )
+        )
+        self.learned_bias_tf_pub.publish(
+            self._learning_vector(
+                operation_id, self.learning_count, self.bias_tf
+            )
+        )
+        self.learned_covariance_current_pub.publish(
+            self._learning_vector(
+                operation_id, self.learning_count, self.cov_current
+            )
+        )
+        self.learned_covariance_tf_pub.publish(
+            self._learning_vector(
+                operation_id, self.learning_count, self.cov_tf
+            )
+        )
+        self.learning_sample_count_pub.publish(Int32(data=self.learning_count))
 
     def _ci_fusion(
         self,

@@ -11,7 +11,8 @@ import numpy as np
 
 def load_node():
     rospy = ModuleType('rospy')
-    for name in ('Publisher', 'Subscriber', 'loginfo', 'logwarn', 'logerr',
+    rospy.Publisher = Mock(side_effect=lambda *args, **kwargs: Mock())
+    for name in ('Subscriber', 'loginfo', 'logwarn', 'logerr',
                  'logerr_throttle', 'logwarn_throttle'):
         setattr(rospy, name, Mock())
     geometry = ModuleType('geometry_msgs.msg')
@@ -19,6 +20,8 @@ def load_node():
     geometry.PoseWithCovarianceStamped = SimpleNamespace
     std = ModuleType('std_msgs.msg')
     std.Float32MultiArray = SimpleNamespace
+    std.Float64MultiArray = SimpleNamespace
+    std.Int32 = SimpleNamespace
     std.MultiArrayDimension = SimpleNamespace
     modules = {'rospy': rospy, 'geometry_msgs': ModuleType('geometry_msgs'),
                'geometry_msgs.msg': geometry, 'std_msgs': ModuleType('std_msgs'),
@@ -88,6 +91,10 @@ class ErrorLearningTests(unittest.TestCase):
         self.assertAlmostEqual(node.cov_tf[0, 0], .0199)
         self.assertTrue(np.all(np.linalg.eigvalsh(node.cov_current) > 0.))
         self.assertTrue(np.all(np.linalg.eigvalsh(node.cov_tf) > 0.))
+        self.assertEqual(node.learned_bias_current_pub.publish.call_count, 2)
+        published = node.learned_bias_current_pub.publish.call_args.args[0]
+        np.testing.assert_allclose(published.data, [2., 2., .2, 0., 0.])
+        self.assertEqual(node.learning_sample_count_pub.publish.call_count, 2)
 
     def test_unknown_or_wrong_frame_feedback_is_ignored(self):
         node = self.node()

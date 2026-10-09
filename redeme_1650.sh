@@ -167,6 +167,17 @@ rosrun esaki_youbot_project_gradient afine_transformation.py
 roslaunch place_estimation place_estimation_pipeline.launch
 
 
+#予備実験用のデータ収集・解析機能
+roslaunch place_estimation preliminary_experiment.launch \
+  output_bag:=/保存先/preliminary_01
+
+#Recording to '...bag'が表示されてから実験を開始してください。
+#実験終了後：
+rosrun place_estimation preliminary_experiment_analyzer.py \
+  /保存先/preliminary_01.bag \
+  /保存先/preliminary_01_analysis
+
+
 ########
 catkin clean -f 
  

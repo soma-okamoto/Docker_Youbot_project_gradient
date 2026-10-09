@@ -6,6 +6,11 @@ tf_topic: /P_tf
 pred_topic: /P_pred
 cov_topic: /Sigma_pred
 used_observation_topic: /used_physical_observation
+learned_bias_current_topic: /learned_bias_current
+learned_bias_tf_topic: /learned_bias_tf
+learned_covariance_current_topic: /learned_covariance_current
+learned_covariance_tf_topic: /learned_covariance_tf
+learning_sample_count_topic: /learning_sample_count
 
 # Sequential operation-error learning
 enable_error_learning: true

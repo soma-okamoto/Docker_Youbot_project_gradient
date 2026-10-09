@@ -152,7 +152,7 @@ def evaluate_adaptation_history(
         "latest_operation_id": int(latest["operation_id"]),
         "adaptation_state": state,
         "latest": {
-            "kl_posterior_to_prior": float(latest["kl"]),
+            "kl_prior_to_posterior": float(latest["kl"]),
             "mean_shift_m": float(latest["mean_shift"]),
             "mean_component": float(latest["mean_component"]),
             "covariance_component": float(latest["covariance_component"]),

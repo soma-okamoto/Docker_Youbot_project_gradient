@@ -26,7 +26,9 @@ transform or timestamp-check `/P_current`, `/P_yolo`, or array-form `/P_meta`.
 ### `/P_current` (`std_msgs/Float32MultiArray`)
 
 `[metadata, x, y, z]`. The current node preserves the legacy metadata field
-but uses only indices 1--3.
+but uses only indices 1--3. The preliminary-experiment analyzer interprets a
+positive integer metadata value as the operation ID for robust bag alignment;
+other values fall back to message arrival order.
 
 ### `/P_tf` (`geometry_msgs/PoseStamped`)
 
@@ -77,3 +79,16 @@ before any prior distribution is included. Its header sequence is the Place
 operation ID. The prior node uses this feedback to update the `P_current` and
 `P_tf` bias and covariance for later operations. No message is published when
 the result falls back to the prior without a physical observation.
+
+### Learned-state diagnostics
+
+After each accepted learning update, the prior node publishes:
+
+- `/learning_sample_count` as `std_msgs/Int32`;
+- `/learned_bias_current` and `/learned_bias_tf` as
+  `[operation_id, sample_count, bx, by, bz]`; and
+- `/learned_covariance_current` and `/learned_covariance_tf` as
+  `[operation_id, sample_count, Sxx, Sxy, Sxz, Syx, Syy, Syz, Szx, Szy, Szz]`.
+
+The four array topics use `std_msgs/Float64MultiArray` and are latched so that
+recording and offline calibration can capture the latest learned state.

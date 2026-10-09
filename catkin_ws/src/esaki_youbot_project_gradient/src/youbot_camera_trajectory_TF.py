@@ -208,7 +208,7 @@ class YoubotCameraArmController:
 
         # この角度以内なら「水平気味に見る」モード
         # これを超えたら「q4で対象を見る」モード
-        self.pitch_level_limit = DegToRad(20)
+        self.pitch_level_limit = DegToRad(30)
 
         # q3で動かした分をq4でどれくらい打ち消すか
         self.q4_level_gain = 0.7
@@ -582,6 +582,46 @@ class YoubotCameraArmController:
 
         return np.linalg.norm(p - closest)
 
+    def move_to_initial_position(self):
+        """
+        Arm2を初期姿勢へ移動させる
+        """
+        initial_joints = [
+            self.q1,
+            self.q2,
+            self.q3,
+            self.q4,
+            self.q5
+        ]
+
+        rospy.loginfo(
+            "Moving Arm2 to initial position: "
+            "q1=%.1f, q2=%.1f, q3=%.1f, q4=%.1f, q5=%.1f deg",
+            RadToDeg(self.q1),
+            RadToDeg(self.q2),
+            RadToDeg(self.q3),
+            RadToDeg(self.q4),
+            RadToDeg(self.q5)
+        )
+
+        # Controllerとの接続を少し待つ
+        rospy.sleep(1.0)
+
+        # 接続直後の取りこぼし防止のため複数回送信
+        rate = rospy.Rate(10)
+
+        for _ in range(20):
+            if rospy.is_shutdown():
+                return
+
+            self.publish_arm2_joints(initial_joints)
+            rate.sleep()
+
+        self.last_q1_cmd = self.q1
+        self.last_q3_cmd = self.q3
+        self.last_q4_cmd = self.q4
+
+        rospy.loginfo("Arm2 initial position command published")
 ##########################################################################
 ##############################Publish部分#######################################
 
@@ -631,6 +671,8 @@ class YoubotCameraArmController:
 
     def run(self):
         rate = rospy.Rate(10)
+            # 起動時に初期姿勢へ移動
+        self.move_to_initial_position()
 
         while not rospy.is_shutdown():
             self.update_hold_state()

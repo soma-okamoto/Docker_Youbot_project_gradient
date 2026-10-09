@@ -23,11 +23,13 @@ sudo ntpdate -u ccntp.meijo-u.ac.jp
 PC2で実行必須 
 sudo ip route add 10.42.0.0/24 via 192.168.11.48
 
-PC1で実行必須
-sudo sysctl -w net.ipv4.ip_forward=1
+ip route get 10.42.0.240
 
-sudo iptables -A FORWARD -i wlo1 -o eno1 -j ACCEPT
-sudo iptables -A FORWARD -i eno1 -o wlo1 -j ACCEPT
+PC1で実行必須
+# sudo sysctl -w net.ipv4.ip_forward=1
+
+# sudo iptables -A FORWARD -i wlo1 -o eno1 -j ACCEPT
+# sudo iptables -A FORWARD -i eno1 -o wlo1 -j ACCEPT
 
 
 ####################################################################################
@@ -51,7 +53,7 @@ export ROS_MASTER_URI=http://192.168.11.14:11311
 docker rm -f irm_dev
 docker run -d --name irm_dev --network=host \
   -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
-  -e ROS_MASTER_URI=http://192.168.11.47:11311/ \
+  -e ROS_MASTER_URI=http://192.168.11.48:11311/ \
   -e ROS_IP=192.168.11.47  \
   irm_dev tail -f /dev/null
 
@@ -67,7 +69,7 @@ roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
 docker exec -it irm_dev bash
 cd Detect_ws
 export ROS_IP=192.168.11.47
-export ROS_MASTER_URI=http://192.168.11.47:11311
+export ROS_MASTER_URI=http://192.168.11.48:11311
 source devel/setup.bash
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
@@ -83,7 +85,7 @@ export ROS_MASTER_URI=http://192.168.11.17:11311
 docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
-  -e ROS_MASTER_URI=http://192.168.11.47:11311 \
+  -e ROS_MASTER_URI=http://192.168.11.48:11311 \
   -e ROS_IP=192.168.11.47 \
   youbot_pro tail -f /dev/null
 
@@ -91,7 +93,7 @@ docker run -d --name youbot_pro --network=host \
 docker exec -it youbot_pro bash
 cd catkin_ws
 export ROS_IP=192.168.11.47
-export ROS_MASTER_URI=http://192.168.11.47:11311
+export ROS_MASTER_URI=http://192.168.11.48:11311
 source devel/setup.bash
 
 
@@ -103,13 +105,12 @@ rosrun esaki_youbot_project_gradient gripper.py
 
 rosrun esaki_youbot_project_gradient youbot_camera_real_trajectory_node.py 
 
-右アーム追従＆tf
 rosrun esaki_youbot_project_gradient youbot_camera_trajectory_TF.py 
 
 
 ###SimBridge
 rosrun esaki_youbot_project_gradient Bridge_Simulation_command.py
-rosrun esaki_youbot_project_gradient Bridge_Simulation_TF.p
+rosrun esaki_youbot_project_gradient Bridge_Simulation_TF.py
 
 # ####Slam
 # roslaunch esaki_slam youbot_move_base.launch
@@ -137,6 +138,8 @@ rosrun esaki_youbot_project_gradient move_base_global_registration.py
 rosrun esaki_youbot_project_gradient afine_transformation.py
 
 
+
+###############
 roslaunch place_estimation place_estimation_pipeline.launch 
 
 
@@ -162,6 +165,7 @@ source /opt/ros_py310/setup.bash
 source /home/dars/catkin_ws/devel/setup.bash
 
 cd /home/dars/catkin_ws/src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
+
 rosrun Yolov5_StrongSORT track_save_gpu.py \
   --device 0 \
   --view-img

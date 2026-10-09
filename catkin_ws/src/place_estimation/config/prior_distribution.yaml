@@ -5,6 +5,12 @@ current_topic: /P_current
 tf_topic: /P_tf
 pred_topic: /P_pred
 cov_topic: /Sigma_pred
+used_observation_topic: /used_physical_observation
+
+# Sequential operation-error learning
+enable_error_learning: true
+learning_min_samples: 2
+max_pending_learning_operations: 100
 
 # /P_current has no Header.
 # Both inputs must already be expressed in this frame.
@@ -38,8 +44,7 @@ sigma_tf: [0.02, 0.02, 0.03]
 # CI weight
 # optimize: search omega that minimizes trace or determinant
 # fixed: use ci_fixed_weight
-# ci_weight_mode: optimize
-ci_weight_mode: fixed
+ci_weight_mode: optimize
 ci_fixed_weight: 0.5
 ci_weight_min: 0.0
 ci_weight_max: 1.0

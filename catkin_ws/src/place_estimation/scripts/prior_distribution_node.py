@@ -19,8 +19,8 @@ Output
 方針
   - P_current, P_tf は過去と平均しない。
   - 今回受信したXYZを、そのPlace操作の位置推定値として使う。
-  - バイアスと共分散はROSパラメータから読み込む。
-  - 初回はデフォルト値を使用し、将来は逐次学習した値へ差し替える。
+  - バイアスと共分散の初期値はROSパラメータから読み込む。
+  - 採用された物理観測のフィードバックから誤差特性を逐次更新する。
 """
 
 import threading
@@ -28,7 +28,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 import rospy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension
 
 
@@ -41,6 +41,9 @@ class PriorDistributionNode:
         self.tf_topic = rospy.get_param("~tf_topic", "/P_tf")
         self.pred_topic = rospy.get_param("~pred_topic", "/P_pred")
         self.cov_topic = rospy.get_param("~cov_topic", "/Sigma_pred")
+        self.used_observation_topic = rospy.get_param(
+            "~used_observation_topic", "/used_physical_observation"
+        )
 
         # P_currentにはHeaderがないため、P_tfと同じ座標系であることを前提とする。
         self.expected_frame = rospy.get_param("~expected_frame", "")
@@ -90,6 +93,32 @@ class PriorDistributionNode:
 
         self._validate_settings()
 
+        # Sequential operation-error learning. The selected physical
+        # observation is fed back by observation_fusion_node_new.py.
+        self.enable_error_learning = bool(
+            rospy.get_param("~enable_error_learning", True)
+        )
+        self.learning_min_samples = int(
+            rospy.get_param("~learning_min_samples", 2)
+        )
+        self.max_pending_learning_operations = int(
+            rospy.get_param("~max_pending_learning_operations", 100)
+        )
+        if self.learning_min_samples < 2:
+            raise ValueError("~learning_min_samples must be at least 2")
+        if self.max_pending_learning_operations <= 0:
+            raise ValueError(
+                "~max_pending_learning_operations must be positive"
+            )
+
+        self.learning_count = 0
+        self.mean_error_current = np.zeros(3, dtype=np.float64)
+        self.mean_error_tf = np.zeros(3, dtype=np.float64)
+        self.error_m2_current = np.zeros((3, 3), dtype=np.float64)
+        self.error_m2_tf = np.zeros((3, 3), dtype=np.float64)
+        self.sum_used_covariance = np.zeros((3, 3), dtype=np.float64)
+        self.pending_learning_samples = {}
+
         # 1操作分の受信待ちデータ
         self.pending_current: Optional[np.ndarray] = None
         self.pending_tf: Optional[np.ndarray] = None
@@ -113,6 +142,12 @@ class PriorDistributionNode:
             self.tf_topic,
             PoseStamped,
             self._tf_callback,
+            queue_size=10,
+        )
+        self.used_observation_sub = rospy.Subscriber(
+            self.used_observation_topic,
+            PoseWithCovarianceStamped,
+            self._used_observation_callback,
             queue_size=10,
         )
 
@@ -329,6 +364,18 @@ class PriorDistributionNode:
         self.pending_tf_header = None
 
         self.operation_count += 1
+        operation_id = self.operation_count
+
+        if self.enable_error_learning:
+            self.pending_learning_samples[operation_id] = (
+                raw_current.copy(), raw_tf.copy()
+            )
+            while (
+                len(self.pending_learning_samples)
+                > self.max_pending_learning_operations
+            ):
+                oldest = min(self.pending_learning_samples)
+                del self.pending_learning_samples[oldest]
 
         # e = P_source - P_ref と定義するため、
         # バイアス補正では推定位置からbiasを引く。
@@ -369,6 +416,7 @@ class PriorDistributionNode:
             pred_covariance,
             frame_id,
             stamp,
+            operation_id,
         )
 
         rospy.loginfo(
@@ -387,6 +435,128 @@ class PriorDistributionNode:
                 precision=8,
             ),
         )
+
+    @staticmethod
+    def _position_covariance(
+        message: PoseWithCovarianceStamped,
+    ) -> np.ndarray:
+        covariance_6d = np.asarray(
+            message.pose.covariance, dtype=np.float64
+        ).reshape(6, 6)
+        return covariance_6d[:3, :3]
+
+    @staticmethod
+    def _welford_update(
+        value: np.ndarray,
+        count: int,
+        mean: np.ndarray,
+        m2: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        delta = value - mean
+        updated_mean = mean + delta / float(count)
+        delta_after = value - updated_mean
+        updated_m2 = m2 + np.outer(delta, delta_after)
+        return updated_mean, updated_m2
+
+    def _used_observation_callback(
+        self,
+        message: PoseWithCovarianceStamped,
+    ) -> None:
+        if not self.enable_error_learning:
+            return
+
+        if (
+            self.expected_frame
+            and message.header.frame_id != self.expected_frame
+        ):
+            rospy.logerr_throttle(
+                2.0,
+                "Used observation frame mismatch: expected '%s', received '%s'",
+                self.expected_frame,
+                message.header.frame_id,
+            )
+            return
+
+        operation_id = int(message.header.seq)
+        position = self._pose_position(message.pose)
+        if not self._is_valid_position(position):
+            rospy.logerr_throttle(2.0, "Used observation contains NaN or Inf")
+            return
+
+        try:
+            used_covariance = self._position_covariance(message)
+            if not np.all(np.isfinite(used_covariance)):
+                raise ValueError("non-finite covariance")
+            used_covariance = self._regularize_covariance(used_covariance)
+        except (ValueError, np.linalg.LinAlgError) as error:
+            rospy.logerr_throttle(
+                2.0, "Invalid used-observation covariance: %s", error
+            )
+            return
+
+        with self.lock:
+            sample = self.pending_learning_samples.pop(operation_id, None)
+            if sample is None:
+                rospy.logwarn_throttle(
+                    2.0,
+                    "No operation sample for used observation seq=%d",
+                    operation_id,
+                )
+                return
+
+            raw_current, raw_tf = sample
+            error_current = raw_current - position
+            error_tf = raw_tf - position
+            self.learning_count += 1
+
+            (
+                self.mean_error_current,
+                self.error_m2_current,
+            ) = self._welford_update(
+                error_current,
+                self.learning_count,
+                self.mean_error_current,
+                self.error_m2_current,
+            )
+            (
+                self.mean_error_tf,
+                self.error_m2_tf,
+            ) = self._welford_update(
+                error_tf,
+                self.learning_count,
+                self.mean_error_tf,
+                self.error_m2_tf,
+            )
+            self.sum_used_covariance += used_covariance
+
+            self.bias_current = self.mean_error_current.copy()
+            self.bias_tf = self.mean_error_tf.copy()
+
+            if self.learning_count >= self.learning_min_samples:
+                average_used_covariance = (
+                    self.sum_used_covariance / float(self.learning_count)
+                )
+                sample_covariance_current = (
+                    self.error_m2_current / float(self.learning_count - 1)
+                )
+                sample_covariance_tf = (
+                    self.error_m2_tf / float(self.learning_count - 1)
+                )
+                self.cov_current = self._regularize_covariance(
+                    sample_covariance_current - average_used_covariance
+                )
+                self.cov_tf = self._regularize_covariance(
+                    sample_covariance_tf - average_used_covariance
+                )
+
+            rospy.loginfo(
+                "Learned operation error from seq=%d: n=%d, "
+                "bias_current=%s, bias_tf=%s",
+                operation_id,
+                self.learning_count,
+                np.array2string(self.bias_current, precision=6),
+                np.array2string(self.bias_tf, precision=6),
+            )
 
     def _ci_fusion(
         self,
@@ -490,8 +660,10 @@ class PriorDistributionNode:
         covariance: np.ndarray,
         frame_id: str,
         stamp,
+        operation_id: int,
     ) -> None:
         pred_message = PoseStamped()
+        pred_message.header.seq = operation_id
         pred_message.header.frame_id = frame_id
         pred_message.header.stamp = stamp
 

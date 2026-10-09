@@ -4,40 +4,53 @@
 
 
 """
-observation_fusion_node.py
+observation_fusion_node_new.py
 
-事前分布 N(P_pred, Sigma_pred) と YOLO / Meta の観測候補を受け取り、
-最終配置位置 N(P_place, Sigma_place) を出力するROS1ノード。
+事前分布 N(P_pred, Sigma_pred) とPlace後のYOLO/RealSense・Meta観測を
+受け取り、局所適応レジストレーションの推定結果
+N(P_place, Sigma_place) を生成するROS1ノード。
 
-初期開発版:
-- 学習機能なし
-- YOLOは候補ごとの受信共分散を使用。不正・過大な共分散の候補は棄却
-- Metaは共分散付き配列にも対応。位置のみの入力では固定共分散を使用
-- バイアスと観測間CI重みは固定ROSパラメータ
-- YOLOとMetaの両方で可変個数候補に対応
-- 事前とのマハラノビス距離は不整合の診断と、曖昧な単独観測の候補対応に使用
-- 両センサの候補が整合する場合は最も整合する組を選び、観測同士をCI融合
-- 観測間が不整合なら共分散のtraceが小さい観測を採用。同等なら事前へ戻す
-- max_std_yolo / max_std_meta: 最大主軸標準偏差の上限[m]、暫定既定値0.10
-- 共分散付きMeta: meta_candidate_stride=12、meta_covariance_indices=[3,...,11]
-- 位置のみのMeta入力では時間的な安定性を推定しない
-- 有効な観測がない場合、または競合時の不確かさが同等の場合は事前分布へ戻す
+前提:
+- 入力位置は上流でボトル中心、メートル、共通座標系へ変換済みとする。
+- このノードはセンサ観測のバイアスを固定ROSパラメータで補正する。
+- 試行間の誤差学習状態は保持しない。実際に採用した物理観測分布を
+  /used_physical_observationへ配信し、prior_distribution_node.pyが
+  P_current・P_tfのバイアスと共分散を逐次更新する。
+
+入力:
+- /P_pred, /Sigma_pred: Place操作ごとの事前位置分布。
+- /P_yolo: YOLO/RealSenseの可変個数候補。各候補に3x3共分散が必須。
+- /P_meta: 無効化、Float32MultiArray、PoseStampedから選択可能。
+  Float32MultiArrayでは位置のみ、または候補ごとの3x3共分散を受信できる。
 
 候補入力モード:
-- packed:
-    1つのFloat32MultiArrayに可変個数の候補をまとめる。
-    YOLO例:
-    [x,y,z,Sxx,Sxy,Sxz,Syx,Syy,Syz,Szx,Szy,Szz, ...]
-- stream:
-    observation_timeoutの間に届いた複数メッセージを蓄積する。
-    各メッセージは1候補でも複数候補でもよい。
+- packed: 1つのメッセージに形成済みの可変個数候補を格納する。
+  共分散付きレコード例:
+  [x,y,z,Sxx,Sxy,Sxz,Syx,Syy,Syz,Szx,Szy,Szz, ...]
+- stream: observation_timeout内の各メッセージを1観測フレームとして蓄積する。
+  距離に基づいてフレーム間対応を取り、検出継続率と位置ばらつきから
+  安定候補を形成する。代表位置はフレーム平均、代表共分散は標本共分散/N
+  とフレームごとのセンサ共分散/Nの和から計算する。
 
-Metaメッセージ型:
-- disabled
-- float32_multi_array:
-    packed / stream の両方に対応
-- pose_stamped:
-    1メッセージ=1候補。複数候補ならstreamを使用
+候補選択と融合:
+- 非有限、非正定値、または最大主軸標準偏差が上限を超える候補を棄却する。
+- 事前分布とのマハラノビス距離は候補診断と、事前をCIへ含めるかの判定に
+  使用する。事前から遠いという理由だけでは物理観測を棄却しない。
+- YOLOとMetaが整合する場合は、最も整合する候補組を選択してCI融合する。
+- 両観測が競合する場合は共分散traceが小さい方を採用し、同程度なら
+  事前分布へフォールバックする。
+- 事前と採用観測が近ければ事前を含むCI、遠ければ物理観測のみのCIを行う。
+- CI重みは固定値、または融合後共分散のtrace/determinant最小化で決定する。
+- 有効な物理観測がない場合は事前分布をそのまま採用する。
+
+主な出力:
+- /P_place, /Sigma_place: 推定したボトル中心位置と3x3共分散。
+- /used_physical_observation: 事前を含める前の採用物理観測分布。
+- /observation_status, /observation_distances: 分岐状態と選択距離。
+- センサ別の候補距離、整合度、選択インデックス診断トピック。
+
+観測待機時間、マハラノビス距離、共分散上限、検出継続率などの閾値は
+config/local_registration_thresholds.yamlから設定する。
 """
 
 import threading
@@ -45,7 +58,7 @@ from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 import rospy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from std_msgs.msg import (
     Float32MultiArray,
     Int32,
@@ -74,6 +87,9 @@ class ObservationFusionNode:
         )
         self.status_topic = rospy.get_param(
             "~status_topic", "/observation_status"
+        )
+        self.used_observation_topic = rospy.get_param(
+            "~used_observation_topic", "/used_physical_observation"
         )
         self.distance_topic = rospy.get_param(
             "~distance_topic", "/observation_distances"
@@ -224,8 +240,8 @@ class ObservationFusionNode:
         )
 
         # ================================================================
-        # Prior discrepancy thresholds are diagnostic; pair gate selects
-        # whether two observations can be fused.
+        # Prior gates decide whether the prior participates in CI. A distant
+        # physical observation is still valid and is fused without the prior.
         # ================================================================
         self.gate_yolo = float(
             rospy.get_param("~gate_yolo", 7.815)
@@ -237,26 +253,81 @@ class ObservationFusionNode:
             rospy.get_param("~gate_yolo_meta", 7.815)
         )
 
-        if min(
-            self.gate_yolo,
-            self.gate_meta,
-            self.gate_yolo_meta,
-        ) <= 0.0:
-            raise ValueError("gate thresholds must be positive")
+        if not all(
+            np.isfinite(value) and value > 0.0
+            for value in (
+                self.gate_yolo,
+                self.gate_meta,
+                self.gate_yolo_meta,
+            )
+        ):
+            raise ValueError("gate thresholds must be finite and positive")
+
+        self.uncertainty_trace_rtol = float(
+            rospy.get_param(
+                "~uncertainty_trace_relative_tolerance", 0.10
+            )
+        )
+        self.uncertainty_trace_atol = float(
+            rospy.get_param(
+                "~uncertainty_trace_absolute_tolerance", 1.0e-6
+            )
+        )
+        if (
+            not np.isfinite(self.uncertainty_trace_rtol)
+            or self.uncertainty_trace_rtol < 0.0
+            or not np.isfinite(self.uncertainty_trace_atol)
+            or self.uncertainty_trace_atol < 0.0
+        ):
+            raise ValueError(
+                "uncertainty trace tolerances must be finite and non-negative"
+            )
 
         # ================================================================
-        # Waiting / observation-only CI weights
+        # Waiting / CI weights
         # ================================================================
         self.observation_timeout = float(
             rospy.get_param("~observation_timeout", 2.0)
         )
-        if self.observation_timeout <= 0.0:
+        if (
+            not np.isfinite(self.observation_timeout)
+            or self.observation_timeout <= 0.0
+        ):
             raise ValueError(
-                "~observation_timeout must be positive"
+                "~observation_timeout must be finite and positive"
             )
 
-        # Legacy ~single_weight_prior is ignored: any valid observation
-        # replaces the prior in the output.
+        self.ci_weight_mode = str(
+            rospy.get_param("~observation_ci_weight_mode", "optimize")
+        ).lower()
+        self.ci_weight_step = float(
+            rospy.get_param("~observation_ci_weight_step", 0.01)
+        )
+        self.ci_objective = str(
+            rospy.get_param("~observation_ci_objective", "trace")
+        ).lower()
+        if self.ci_weight_mode not in {"optimize", "fixed"}:
+            raise ValueError(
+                "~observation_ci_weight_mode must be optimize or fixed"
+            )
+        if self.ci_objective not in {"trace", "determinant"}:
+            raise ValueError(
+                "~observation_ci_objective must be trace or determinant"
+            )
+        if not np.isfinite(self.ci_weight_step) or self.ci_weight_step <= 0.0:
+            raise ValueError(
+                "~observation_ci_weight_step must be finite and positive"
+            )
+
+        self.single_weight_prior = float(
+            rospy.get_param("~single_weight_prior", 0.5)
+        )
+        if (
+            not np.isfinite(self.single_weight_prior)
+            or not 0.0 <= self.single_weight_prior <= 1.0
+        ):
+            raise ValueError("~single_weight_prior must be in [0, 1]")
+
         self.both_weights = self._load_weights(
             "~both_weights", [0.34, 0.33, 0.33]
         )
@@ -265,21 +336,46 @@ class ObservationFusionNode:
             raise ValueError(
                 "~both_weights must give positive weight to YOLO or Meta"
             )
-        self.weight_yolo = float(
-            self.both_weights[1] / observation_weight_sum
-        )
         self.max_std_yolo = self._load_positive_float("~max_std_yolo", 0.10)
         self.max_std_meta = self._load_positive_float("~max_std_meta", 0.10)
+        self.min_observation_frames = self._load_positive_int(
+            "~min_observation_frames", 3
+        )
+        if self.min_observation_frames < 2:
+            raise ValueError("~min_observation_frames must be at least 2")
+        self.min_detection_ratio = float(
+            rospy.get_param("~min_detection_ratio", 0.60)
+        )
+        if (
+            not np.isfinite(self.min_detection_ratio)
+            or not 0.0 < self.min_detection_ratio <= 1.0
+        ):
+            raise ValueError("~min_detection_ratio must be in (0, 1]")
+        self.max_frame_position_std_yolo = self._load_positive_float(
+            "~max_frame_position_std_yolo", 0.10
+        )
+        self.max_frame_position_std_meta = self._load_positive_float(
+            "~max_frame_position_std_meta", 0.10
+        )
+        self.candidate_association_distance = self._load_positive_float(
+            "~candidate_association_distance", 0.10
+        )
         if rospy.has_param("~mismatch_preferred_sensor"):
             rospy.logwarn(
                 "~mismatch_preferred_sensor is ignored; conflicting observations "
                 "are selected by covariance trace"
             )
         if self.enable_meta and self.meta_covariance_indices is None:
-            rospy.logwarn(
-                "Meta uses fixed covariance; temporal stability is not measured. "
-                "Send covariance with ~meta_covariance_indices to reflect changes."
-            )
+            if self.meta_input_mode == "stream":
+                rospy.loginfo(
+                    "Meta uses fixed per-frame covariance plus temporal "
+                    "sample covariance from stream observations."
+                )
+            else:
+                rospy.logwarn(
+                    "Packed Meta XYZ uses fixed covariance; send covariance "
+                    "with ~meta_covariance_indices to reflect uncertainty."
+                )
 
         # ================================================================
         # Pending prior pair
@@ -304,6 +400,8 @@ class ObservationFusionNode:
         self.yolo_covariances: List[np.ndarray] = []
         self.meta_candidates: List[np.ndarray] = []
         self.meta_covariances: List[np.ndarray] = []
+        self.yolo_frames = []
+        self.meta_frames = []
         self.timer = None
 
         # ================================================================
@@ -319,6 +417,11 @@ class ObservationFusionNode:
         )
         self.status_pub = rospy.Publisher(
             self.status_topic, String, queue_size=10
+        )
+        self.used_observation_pub = rospy.Publisher(
+            self.used_observation_topic,
+            PoseWithCovarianceStamped,
+            queue_size=10,
         )
         self.distance_pub = rospy.Publisher(
             self.distance_topic,
@@ -767,6 +870,8 @@ class ObservationFusionNode:
         self.yolo_covariances = []
         self.meta_candidates = []
         self.meta_covariances = []
+        self.yolo_frames = []
+        self.meta_frames = []
 
         self.timer = rospy.Timer(
             rospy.Duration(self.observation_timeout),
@@ -888,6 +993,7 @@ class ObservationFusionNode:
                 received = self.yolo_received
                 target = self.yolo_candidates
                 covariance_target = self.yolo_covariances
+                frame_target = self.yolo_frames
                 maximum = self.max_yolo_candidates
 
                 default_covariance = self.cov_yolo
@@ -897,6 +1003,7 @@ class ObservationFusionNode:
                 received = self.meta_received
                 target = self.meta_candidates
                 covariance_target = self.meta_covariances
+                frame_target = self.meta_frames
                 maximum = self.max_meta_candidates
                 default_covariance = self.cov_meta
             else:
@@ -946,6 +1053,14 @@ class ObservationFusionNode:
                 target.append(candidate.copy())
 
                 covariance_target.append(covariances[index].copy())
+
+            if mode == "stream":
+                frame_target.append(
+                    (
+                        [candidate.copy() for candidate in candidates],
+                        [covariance.copy() for covariance in covariances],
+                    )
+                )
 
             if sensor == "yolo":
                 self.yolo_received = True
@@ -1030,6 +1145,138 @@ class ObservationFusionNode:
         if np.sqrt(max(values[-1], self.min_variance)) > max_std:
             return None
         return self._regularize(covariance)
+
+    def _summarize_stream_candidates(self, sensor: str) -> None:
+        """Associate stream detections and form stable representative observations."""
+        if sensor == "yolo":
+            if self.yolo_input_mode != "stream":
+                return
+            frames = self.yolo_frames
+            max_frame_std = self.max_frame_position_std_yolo
+            max_observation_std = self.max_std_yolo
+        elif sensor == "meta":
+            if self.meta_input_mode != "stream":
+                return
+            frames = self.meta_frames
+            max_frame_std = self.max_frame_position_std_meta
+            max_observation_std = self.max_std_meta
+        else:
+            raise ValueError(f"unknown sensor: {sensor}")
+
+        tracks = []
+        for frame_index, (positions, covariances) in enumerate(frames):
+            detections = []
+            for position, covariance in zip(positions, covariances):
+                valid_covariance = self._stable_covariance(
+                    covariance, np.inf
+                )
+                if valid_covariance is not None:
+                    detections.append((position, valid_covariance))
+
+            possible_matches = []
+            for track_index, track in enumerate(tracks):
+                for detection_index, (position, _covariance) in enumerate(
+                    detections
+                ):
+                    distance = float(
+                        np.linalg.norm(position - track["last_position"])
+                    )
+                    if distance <= self.candidate_association_distance:
+                        possible_matches.append(
+                            (distance, track_index, detection_index)
+                        )
+
+            assigned_tracks = set()
+            assigned_detections = set()
+            for _distance, track_index, detection_index in sorted(
+                possible_matches
+            ):
+                if (
+                    track_index in assigned_tracks
+                    or detection_index in assigned_detections
+                ):
+                    continue
+                position, covariance = detections[detection_index]
+                track = tracks[track_index]
+                track["positions"].append(position.copy())
+                track["covariances"].append(covariance.copy())
+                track["frame_indices"].append(frame_index)
+                track["last_position"] = position.copy()
+                assigned_tracks.add(track_index)
+                assigned_detections.add(detection_index)
+
+            for detection_index, (position, covariance) in enumerate(
+                detections
+            ):
+                if detection_index in assigned_detections:
+                    continue
+                tracks.append(
+                    {
+                        "positions": [position.copy()],
+                        "covariances": [covariance.copy()],
+                        "frame_indices": [frame_index],
+                        "last_position": position.copy(),
+                    }
+                )
+
+        representative_positions = []
+        representative_covariances = []
+        frame_count = len(frames)
+        for track in tracks:
+            count = len(track["positions"])
+            detection_ratio = count / frame_count if frame_count else 0.0
+            if (
+                count < self.min_observation_frames
+                or detection_ratio < self.min_detection_ratio
+            ):
+                continue
+
+            positions = np.vstack(track["positions"])
+            mean_position = np.mean(positions, axis=0)
+            centered = positions - mean_position
+            frame_covariance = (centered.T @ centered) / float(count - 1)
+            frame_covariance = 0.5 * (
+                frame_covariance + frame_covariance.T
+            )
+            frame_values = np.linalg.eigvalsh(frame_covariance)
+            frame_std = float(
+                np.sqrt(max(frame_values[-1], 0.0))
+            )
+            if frame_std > max_frame_std:
+                continue
+
+            # C_frame/N follows the manuscript. The average per-frame sensor
+            # covariance contributes another mean-estimate uncertainty term.
+            sensor_covariance = np.mean(
+                np.stack(track["covariances"], axis=0), axis=0
+            )
+            representative_covariance = self._regularize(
+                frame_covariance / float(count)
+                + sensor_covariance / float(count)
+            )
+            if self._stable_covariance(
+                representative_covariance, max_observation_std
+            ) is None:
+                continue
+
+            representative_positions.append(mean_position)
+            representative_covariances.append(representative_covariance)
+
+        if sensor == "yolo":
+            self.yolo_candidates = representative_positions
+            self.yolo_covariances = representative_covariances
+        else:
+            self.meta_candidates = representative_positions
+            self.meta_covariances = representative_covariances
+
+        rospy.loginfo(
+            "Operation %d: %s stream frames=%d tracks=%d stable=%d",
+            self.operation_id,
+            sensor,
+            frame_count,
+            len(tracks),
+            len(representative_positions),
+        )
 
     def _select_candidate(
         self,
@@ -1164,33 +1411,115 @@ class ObservationFusionNode:
     # CI fusion
     # ====================================================================
 
-    def _ci_two(
+    @staticmethod
+    def _integer_compositions(total: int, count: int):
+        if count == 1:
+            yield (total,)
+            return
+        for value in range(total + 1):
+            for suffix in ObservationFusionNode._integer_compositions(
+                total - value, count - 1
+            ):
+                yield (value,) + suffix
+
+    def _simplex_weight_candidates(
         self,
-        position_a: np.ndarray,
-        covariance_a: np.ndarray,
-        position_b: np.ndarray,
-        covariance_b: np.ndarray,
-        weight_a: float,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        weight_a = float(np.clip(weight_a, 0.0, 1.0))
-        weight_b = 1.0 - weight_a
+        count: int,
+        preferred: np.ndarray,
+    ):
+        """Yield the preferred weights first, then a simplex search grid."""
+        yield preferred
+        units = max(1, int(np.ceil(1.0 / self.ci_weight_step)))
+        for composition in self._integer_compositions(units, count):
+            weights = np.asarray(composition, dtype=float) / float(units)
+            if not np.allclose(weights, preferred, rtol=0.0, atol=1.0e-12):
+                yield weights
 
-        info_a = np.linalg.inv(covariance_a)
-        info_b = np.linalg.inv(covariance_b)
+    def _ci_fuse(
+        self,
+        positions: Sequence[np.ndarray],
+        covariances: Sequence[np.ndarray],
+        preferred_weights: Optional[Sequence[float]] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Fuse one to three correlated estimates with generalized CI."""
+        if len(positions) == 0 or len(positions) != len(covariances):
+            raise ValueError("CI requires matching non-empty input lists")
 
-        information = (
-            weight_a * info_a
-            + weight_b * info_b
-        )
-        covariance = self._regularize(
-            np.linalg.inv(information)
-        )
+        count = len(positions)
+        if count > 3:
+            raise ValueError("CI currently supports at most three inputs")
 
-        vector = (
-            weight_a * (info_a @ position_a)
-            + weight_b * (info_b @ position_b)
-        )
-        return covariance @ vector, covariance
+        normalized_positions = [
+            np.asarray(position, dtype=float).reshape(3)
+            for position in positions
+        ]
+        normalized_covariances = [
+            self._regularize(covariance) for covariance in covariances
+        ]
+
+        if count == 1:
+            return (
+                normalized_positions[0].copy(),
+                normalized_covariances[0].copy(),
+                np.ones(1, dtype=float),
+            )
+
+        if preferred_weights is None:
+            preferred = np.full(count, 1.0 / count, dtype=float)
+        else:
+            preferred = np.asarray(preferred_weights, dtype=float)
+            if (
+                preferred.shape != (count,)
+                or not np.all(np.isfinite(preferred))
+                or np.any(preferred < 0.0)
+                or float(preferred.sum()) <= 0.0
+            ):
+                raise ValueError("invalid preferred CI weights")
+            preferred = preferred / float(preferred.sum())
+
+        if self.ci_weight_mode == "fixed":
+            candidates = (preferred,)
+        else:
+            candidates = self._simplex_weight_candidates(count, preferred)
+
+        information_matrices = [
+            np.linalg.inv(covariance)
+            for covariance in normalized_covariances
+        ]
+        best = None
+        best_objective = np.inf
+
+        for weights in candidates:
+            information = sum(
+                weight * matrix
+                for weight, matrix in zip(weights, information_matrices)
+            )
+            covariance = self._regularize(np.linalg.inv(information))
+            if self.ci_objective == "determinant":
+                sign, objective = np.linalg.slogdet(covariance)
+                if sign <= 0.0:
+                    continue
+                objective = float(objective)
+            else:
+                objective = float(np.trace(covariance))
+
+            tolerance = 1.0e-12 * max(1.0, abs(best_objective))
+            if best is not None and objective >= best_objective - tolerance:
+                continue
+
+            information_vector = sum(
+                weight * (matrix @ position)
+                for weight, matrix, position in zip(
+                    weights, information_matrices, normalized_positions
+                )
+            )
+            position = covariance @ information_vector
+            best = (position, covariance, np.asarray(weights, dtype=float))
+            best_objective = objective
+
+        if best is None:
+            raise np.linalg.LinAlgError("no valid CI solution was found")
+        return best
 
     # ====================================================================
     # Finalization
@@ -1224,6 +1553,9 @@ class ObservationFusionNode:
         meta_scores = np.empty(0, dtype=float)
 
         try:
+            self._summarize_stream_candidates("yolo")
+            self._summarize_stream_candidates("meta")
+
             (
                 selected_yolo,
                 selected_yolo_cov,
@@ -1290,6 +1622,13 @@ class ObservationFusionNode:
                         ),
                     )
 
+            selected_positions = []
+            selected_covariances = []
+            selected_sensors = []
+            selection_kind = None
+            used_observation_position = None
+            used_observation_covariance = None
+
             if yolo_valid and meta_valid:
                 pair_residual = selected_yolo - selected_meta
                 pair_covariance = self._regularize(
@@ -1301,47 +1640,123 @@ class ObservationFusionNode:
                 )
 
                 if pair is not None:
-                    position, covariance = self._ci_two(
-                        selected_yolo,
-                        selected_yolo_cov,
-                        selected_meta,
-                        selected_meta_cov,
-                        self.weight_yolo,
-                    )
-                    status = "both_valid"
+                    selected_positions = [selected_yolo, selected_meta]
+                    selected_covariances = [
+                        selected_yolo_cov, selected_meta_cov
+                    ]
+                    selected_sensors = ["yolo", "meta"]
+                    selection_kind = "consistent_both"
                 elif np.isclose(
                     np.trace(selected_yolo_cov), np.trace(selected_meta_cov),
-                    rtol=1.0e-6, atol=1.0e-12,
+                    rtol=self.uncertainty_trace_rtol,
+                    atol=self.uncertainty_trace_atol,
                 ):
-                    # Equal uncertainty gives no evidence to prefer a sensor.
+                    # Similar uncertainty gives no evidence to prefer a sensor.
                     status = "sensor_mismatch_equal_uncertainty_prior_used"
                 elif np.trace(selected_yolo_cov) < np.trace(selected_meta_cov):
-                    position = selected_yolo.copy()
-                    covariance = selected_yolo_cov.copy()
-                    status = (
-                        "sensor_mismatch_yolo_selected"
-                    )
+                    selected_positions = [selected_yolo]
+                    selected_covariances = [selected_yolo_cov]
+                    selected_sensors = ["yolo"]
+                    selection_kind = "mismatch_yolo"
                 else:
-                    position = selected_meta.copy()
-                    covariance = selected_meta_cov.copy()
-                    status = (
-                        "sensor_mismatch_meta_selected"
-                    )
+                    selected_positions = [selected_meta]
+                    selected_covariances = [selected_meta_cov]
+                    selected_sensors = ["meta"]
+                    selection_kind = "mismatch_meta"
 
             elif yolo_valid:
-                position = selected_yolo.copy()
-                covariance = selected_yolo_cov.copy()
-                status = "yolo_only"
+                selected_positions = [selected_yolo]
+                selected_covariances = [selected_yolo_cov]
+                selected_sensors = ["yolo"]
+                selection_kind = "yolo"
 
             elif meta_valid:
-                position = selected_meta.copy()
-                covariance = selected_meta_cov.copy()
-                status = "meta_only"
+                selected_positions = [selected_meta]
+                selected_covariances = [selected_meta_cov]
+                selected_sensors = ["meta"]
+                selection_kind = "meta"
 
             elif self.yolo_received or self.meta_received:
                 status = "no_valid_observation"
             else:
                 status = "no_observation"
+
+            if selected_positions:
+                distance_by_sensor = {
+                    "yolo": d2_yolo,
+                    "meta": d2_meta,
+                }
+                gate_by_sensor = {
+                    "yolo": self.gate_yolo,
+                    "meta": self.gate_meta,
+                }
+                include_prior = all(
+                    np.isfinite(distance_by_sensor[sensor])
+                    and distance_by_sensor[sensor] <= gate_by_sensor[sensor]
+                    for sensor in selected_sensors
+                )
+
+                if selected_sensors == ["yolo", "meta"]:
+                    observation_weights = self.both_weights[1:]
+                else:
+                    observation_weights = np.ones(1, dtype=float)
+
+                (
+                    used_observation_position,
+                    used_observation_covariance,
+                    _used_observation_weights,
+                ) = self._ci_fuse(
+                    selected_positions,
+                    selected_covariances,
+                    observation_weights,
+                )
+
+                if include_prior:
+                    if len(selected_positions) == 1:
+                        preferred_weights = np.array(
+                            [
+                                self.single_weight_prior,
+                                1.0 - self.single_weight_prior,
+                            ],
+                            dtype=float,
+                        )
+                    else:
+                        preferred_weights = self.both_weights
+
+                    position, covariance, ci_weights = self._ci_fuse(
+                        [self.prior] + selected_positions,
+                        [self.prior_cov] + selected_covariances,
+                        preferred_weights,
+                    )
+                    status_by_kind = {
+                        "consistent_both": "prior_yolo_meta_fused",
+                        "yolo": "prior_yolo_fused",
+                        "meta": "prior_meta_fused",
+                        "mismatch_yolo": "sensor_mismatch_prior_yolo_fused",
+                        "mismatch_meta": "sensor_mismatch_prior_meta_fused",
+                    }
+                else:
+                    position, covariance, ci_weights = self._ci_fuse(
+                        selected_positions,
+                        selected_covariances,
+                        observation_weights,
+                    )
+                    status_by_kind = {
+                        "consistent_both": "yolo_meta_fused",
+                        "yolo": "yolo_only",
+                        "meta": "meta_only",
+                        "mismatch_yolo": "sensor_mismatch_yolo_selected",
+                        "mismatch_meta": "sensor_mismatch_meta_selected",
+                    }
+
+                status = status_by_kind[selection_kind]
+                rospy.loginfo(
+                    "Operation %d: CI sources=%s weights=%s prior_included=%s",
+                    self.operation_id,
+                    (["prior"] if include_prior else []) + selected_sensors,
+                    np.array2string(ci_weights, precision=4),
+                    include_prior,
+                )
 
             self._publish(
                 position=position,
@@ -1356,6 +1771,8 @@ class ObservationFusionNode:
                 meta_distances=meta_distances,
                 meta_scores=meta_scores,
                 meta_index=meta_index,
+                used_observation_position=used_observation_position,
+                used_observation_covariance=used_observation_covariance,
             )
 
             rospy.loginfo(
@@ -1395,6 +1812,8 @@ class ObservationFusionNode:
                 meta_distances=meta_distances,
                 meta_scores=meta_scores,
                 meta_index=-1,
+                used_observation_position=None,
+                used_observation_covariance=None,
             )
         finally:
             self._reset_locked()
@@ -1423,6 +1842,8 @@ class ObservationFusionNode:
         meta_distances: np.ndarray,
         meta_scores: np.ndarray,
         meta_index: int,
+        used_observation_position: Optional[np.ndarray],
+        used_observation_covariance: Optional[np.ndarray],
     ) -> None:
         pose = PoseStamped()
 
@@ -1448,6 +1869,21 @@ class ObservationFusionNode:
             self._covariance_message(covariance)
         )
         self.status_pub.publish(String(data=status))
+
+        if (
+            used_observation_position is not None
+            and used_observation_covariance is not None
+        ):
+            used = PoseWithCovarianceStamped()
+            used.header = pose.header
+            used.pose.pose.position.x = float(used_observation_position[0])
+            used.pose.pose.position.y = float(used_observation_position[1])
+            used.pose.pose.position.z = float(used_observation_position[2])
+            used.pose.pose.orientation.w = 1.0
+            covariance_6d = np.zeros((6, 6), dtype=float)
+            covariance_6d[:3, :3] = used_observation_covariance
+            used.pose.covariance = covariance_6d.reshape(-1).tolist()
+            self.used_observation_pub.publish(used)
 
         distances = Float32MultiArray()
         distances.data = [
@@ -1519,6 +1955,8 @@ class ObservationFusionNode:
         self.yolo_covariances = []
         self.meta_candidates = []
         self.meta_covariances = []
+        self.yolo_frames = []
+        self.meta_frames = []
         self.timer = None
 
 

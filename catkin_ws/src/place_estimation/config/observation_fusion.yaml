@@ -11,6 +11,7 @@ meta_topic: /P_meta
 place_topic: /P_place
 place_cov_topic: /Sigma_place
 status_topic: /observation_status
+used_observation_topic: /used_physical_observation
 distance_topic: /observation_distances
 
 expected_frame: base_footprint
@@ -33,16 +34,14 @@ bias_meta: [0.0, 0.0, 0.0]
 sigma_yolo: [0.03, 0.03, 0.04]
 sigma_meta: [0.02, 0.02, 0.03]
 
-# 3次元95%カイ二乗ゲート
-gate_yolo: 7.815
-gate_meta: 7.815
-gate_yolo_meta: 7.815
+# 閾値と観測待機時間はlocal_registration_thresholds.yamlで設定する。
 
-# 片方しか来ない場合は、この時間後に届いた観測だけで更新
-observation_timeout: 2.0
+# CI重み
+observation_ci_weight_mode: optimize
+observation_ci_weight_step: 0.01
+observation_ci_objective: trace
 
-# 固定CI重み
-# 事前 + 片方の観測
+# fixedモード: 事前 + 片方の観測
 single_weight_prior: 0.5
 
 # 事前 + YOLO + Meta

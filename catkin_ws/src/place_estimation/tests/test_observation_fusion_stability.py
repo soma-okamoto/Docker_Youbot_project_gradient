@@ -16,6 +16,7 @@ def load_node():
         setattr(rospy, name, Mock())
     geometry = ModuleType('geometry_msgs.msg')
     geometry.PoseStamped = SimpleNamespace
+    geometry.PoseWithCovarianceStamped = SimpleNamespace
     std = ModuleType('std_msgs.msg')
     for name in ('Float32MultiArray', 'Int32', 'MultiArrayDimension', 'String'):
         setattr(std, name, SimpleNamespace)
@@ -85,9 +86,43 @@ class StabilityTests(unittest.TestCase):
 
     def test_consistent_observations_still_fuse(self):
         out = self.finish(self.node(), [(0., cov(.02))], [(.01, cov(.02))])
-        self.assertEqual(out['status'], 'both_valid')
+        self.assertEqual(out['status'], 'yolo_meta_fused')
         np.testing.assert_allclose(out['position'], [.005, 0., 0.])
         np.testing.assert_allclose(out['covariance'], cov(.02))
+
+    def test_near_single_observation_fuses_with_prior(self):
+        node = self.node(observation_ci_weight_mode='fixed',
+                         single_weight_prior=.5)
+        out = self.finish(node, [(5.01, cov(.05))], [])
+        self.assertEqual(out['status'], 'prior_yolo_fused')
+        np.testing.assert_allclose(out['position'], [5.005, 0., 0.])
+        np.testing.assert_allclose(out['covariance'], cov(.05))
+
+    def test_far_single_observation_excludes_prior(self):
+        out = self.finish(self.node(observation_ci_weight_mode='fixed'),
+                          [(0., cov(.02))], [])
+        self.assertEqual(out['status'], 'yolo_only')
+        np.testing.assert_allclose(out['position'], [0., 0., 0.])
+
+    def test_near_consistent_pair_uses_three_source_ci(self):
+        node = self.node(observation_ci_weight_mode='fixed',
+                         both_weights=[.34, .33, .33])
+        out = self.finish(node, [(5., cov(.05))], [(5.01, cov(.05))])
+        self.assertEqual(out['status'], 'prior_yolo_meta_fused')
+        np.testing.assert_allclose(out['position'], [5.0033, 0., 0.])
+        np.testing.assert_allclose(out['covariance'], cov(.05))
+
+    def test_ci_optimizer_minimizes_trace(self):
+        node = self.node(observation_ci_weight_mode='optimize',
+                         observation_ci_weight_step=.01)
+        position, covariance, weights = node._ci_fuse(
+            [np.array([5., 0., 0.]), np.array([5.01, 0., 0.])],
+            [cov(.05), cov(.02)],
+            [.5, .5],
+        )
+        np.testing.assert_allclose(position, [5.01, 0., 0.])
+        np.testing.assert_allclose(covariance, cov(.02))
+        np.testing.assert_allclose(weights, [0., 1.])
 
     def test_large_covariance_rejected_even_when_positions_agree(self):
         for sensor in ('yolo', 'meta'):
@@ -132,10 +167,22 @@ class StabilityTests(unittest.TestCase):
                 single = [(0., cov(.02))]
                 out = self.finish(self.node(), mixed if sensor == 'yolo' else single,
                                   mixed if sensor == 'meta' else single)
-                self.assertEqual(out['status'], 'both_valid')
+                self.assertEqual(out['status'], 'yolo_meta_fused')
                 self.assertEqual(out[sensor + '_index'], 1)
                 self.assertEqual(out[sensor + '_scores'][0], 0.)
                 self.assertAlmostEqual(out['position'][0], .005)
+
+    def test_uncertainty_equivalence_tolerance_is_configurable(self):
+        almost_equal = [(1., cov(.0205))]
+        out = self.finish(self.node(), [(0., cov(.02))], almost_equal)
+        self.assertEqual(
+            out['status'], 'sensor_mismatch_equal_uncertainty_prior_used'
+        )
+
+        node = self.node(uncertainty_trace_relative_tolerance=0.,
+                         uncertainty_trace_absolute_tolerance=0.)
+        out = self.finish(node, [(0., cov(.02))], almost_equal)
+        self.assertEqual(out['status'], 'sensor_mismatch_yolo_selected')
 
     def test_gate_uses_principal_variance_including_correlations(self):
         c = np.array([[.006, .005, 0.], [.005, .006, 0.], [0., 0., .001]])
@@ -152,6 +199,12 @@ class StabilityTests(unittest.TestCase):
     def test_invalid_threshold_configuration_is_rejected(self):
         for name in ('max_std_yolo', 'max_std_meta'):
             for value in (0., -1., float('nan'), float('inf')):
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    self.node(**{name: value})
+
+        for name in ('uncertainty_trace_relative_tolerance',
+                     'uncertainty_trace_absolute_tolerance'):
+            for value in (-1., float('nan'), float('inf')):
                 with self.subTest(name=name, value=value), self.assertRaises(ValueError):
                     self.node(**{name: value})
 
@@ -186,9 +239,11 @@ class StabilityTests(unittest.TestCase):
 
     def test_meta_stream_keeps_covariances_aligned_and_truncates_together(self):
         node = self.node(meta_input_mode='stream', meta_candidate_stride=12,
-                         meta_covariance_indices=list(range(3, 12)), max_meta_candidates=2)
+                         meta_covariance_indices=list(range(3, 12)),
+                         max_meta_candidates=2, min_observation_frames=2,
+                         min_detection_ratio=1.)
         node._meta_array_cb(SimpleNamespace(data=record(float('nan'), cov(.09)) + record(1., cov(.01))))
-        node._meta_array_cb(SimpleNamespace(data=record(2., cov(.02)) + record(3., cov(.03))))
+        node._meta_array_cb(SimpleNamespace(data=record(1.01, cov(.02)) + record(3., cov(.03))))
         self.assertEqual(len(node.meta_candidates), 2)
         self.assertEqual(len(node.meta_covariances), 2)
         np.testing.assert_allclose(node.meta_covariances[0], cov(.01))
@@ -197,6 +252,41 @@ class StabilityTests(unittest.TestCase):
         node._timeout_cb(None)
         self.assertEqual(node._publish.call_args.kwargs['status'], 'meta_only')
         self.assertEqual(node.meta_covariances, [])
+
+    def test_stream_builds_mean_and_covariance_from_multiple_frames(self):
+        node = self.node(enable_yolo=False, meta_input_mode='stream',
+                         min_observation_frames=3, min_detection_ratio=1.)
+        for x in (.99, 1., 1.01):
+            node._meta_array_cb(SimpleNamespace(data=[x, 0., 0.]))
+        node._timeout_cb(None)
+        out = node._publish.call_args.kwargs
+        self.assertEqual(out['status'], 'meta_only')
+        np.testing.assert_allclose(out['position'], [1., 0., 0.])
+        expected = np.diag([(.0001 + .0004) / 3., .0004 / 3., .0009 / 3.])
+        np.testing.assert_allclose(out['covariance'], expected, atol=1.e-10)
+
+    def test_stream_rejects_unassociated_one_frame_tracks(self):
+        node = self.node(enable_yolo=False, meta_input_mode='stream',
+                         min_observation_frames=2,
+                         candidate_association_distance=.05)
+        for x in (0., 1., 2.):
+            node._meta_array_cb(SimpleNamespace(data=[x, 0., 0.]))
+        node._timeout_cb(None)
+        self.assertEqual(
+            node._publish.call_args.kwargs['status'], 'no_valid_observation'
+        )
+
+    def test_stream_detection_ratio_is_enforced(self):
+        node = self.node(enable_yolo=False, meta_input_mode='stream',
+                         min_observation_frames=3, min_detection_ratio=.6)
+        for x in (1., 1.01, .99):
+            node._meta_array_cb(SimpleNamespace(data=[x, 0., 0.]))
+        for _ in range(3):
+            node._meta_array_cb(SimpleNamespace(data=[]))
+        node._timeout_cb(None)
+        self.assertEqual(
+            node._publish.call_args.kwargs['status'], 'no_valid_observation'
+        )
 
     def test_bad_or_empty_meta_covariance_messages(self):
         node = self.node(enable_yolo=False, meta_candidate_stride=12,

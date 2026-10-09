@@ -73,6 +73,10 @@ meta_input_mode: stream
 
 meta_candidate_stride: 3
 meta_xyz_indices: [0, 1, 2]
+# observation_fusion_node_new.py: 位置のみなら固定共分散を使用。
+# 観測ごとの共分散を送る場合は stride: 12 に変更し、以下を有効化する。
+# 入力: [x,y,z,Sxx,Sxy,Sxz,Syx,Syy,Syz,Szx,Szy,Szz, ...]
+# meta_covariance_indices: [3, 4, 5, 6, 7, 8, 9, 10, 11]
 max_meta_candidates: 200
 
 # ---------------------------------------------------------------------------
@@ -87,6 +91,13 @@ sigma_meta: [0.02, 0.02, 0.03]
 # ---------------------------------------------------------------------------
 # Gating
 # ---------------------------------------------------------------------------
+# observation_fusion_node_new.py: 最大主軸標準偏差の上限[m]（暫定値）。
+# 上限超過・不正な共分散は棄却。両センサの有効候補がなければ事前へ戻す。
+max_std_yolo: 0.10
+max_std_meta: 0.10
+# 不整合時はtrace(共分散)の小さい方を採用。同等なら事前へ戻す。
+# 旧 mismatch_preferred_sensor は使用しない。
+# 以下の事前との距離ゲートは診断用。観測間のゲートは融合可否に使用。
 # 3D chi-square 95%
 gate_yolo: 7.815
 gate_meta: 7.815

@@ -70,6 +70,7 @@ class YoubotCameraArmController:
     def __init__(self):
         rospy.init_node('youbot_camera_trajectory_publisher')
 
+
         # =========================
         # Arm1 simple capsule occupancy
         # =========================
@@ -145,6 +146,8 @@ class YoubotCameraArmController:
         self.q3 = DegToRad(-105) - DegToRad(146)
         self.q4 = DegToRad(-60) + DegToRad(102.5)
         self.q5 = -DegToRad(0) + DegToRad(167.5)
+
+        self.initial_posture_active = True
 
         # =========================
         # q1 horizontal look-at settings
@@ -225,6 +228,11 @@ class YoubotCameraArmController:
 
         if command != "Hold":
             return
+
+        # 一度Holdが始まったら初期姿勢送信を終了
+        if self.initial_posture_active:
+            self.initial_posture_active = False
+            rospy.loginfo("Initial posture publishing finished")
 
         self.last_hold_time = rospy.Time.now()
         self.hold_active = True
@@ -595,6 +603,10 @@ class YoubotCameraArmController:
 
         if command != "Place":
             return
+        # 一度Placeが始まったら初期姿勢送信を終了
+        if self.initial_posture_active:
+            self.initial_posture_active = False
+            rospy.loginfo("Initial posture publishing finished")
 
         rospy.loginfo("Received Place command")
 
@@ -635,24 +647,52 @@ class YoubotCameraArmController:
         while not rospy.is_shutdown():
             self.update_hold_state()
 
-            if self.hold_active:
+            # =========================
+            # 起動直後だけ初期姿勢
+            # =========================
+            if self.initial_posture_active:
+
+                cand = [
+                    self.q1,
+                    self.q2,
+                    self.q3,
+                    self.q4,
+                    self.q5
+                ]
+
+                self.last_q1_cmd = self.q1
+                self.last_q3_cmd = self.q3
+                self.last_q4_cmd = self.q4
+
+                self.publish_arm2_joints(cand)
+
+                rospy.loginfo_throttle(
+                    2.0,
+                    "Publishing initial Arm2 posture"
+                )
+
+            # =========================
+            # Hold中はArm1 EEを追従
+            # =========================
+            elif self.hold_active:
+
                 ee_pose = self.get_arm1_ee_pose()
 
                 if ee_pose is not None:
-                    # self.hold_ee_pub.publish(ee_pose)
 
                     cand = self.calc_arm2_look_at_joints(ee_pose)
+
+                    rospy.loginfo_throttle(
+                        0.5,
+                        "Tracking: q1=%.1f q2=%.1f q3=%.1f q4=%.1f q5=%.1f",
+                        RadToDeg(cand[0]),
+                        RadToDeg(cand[1]),
+                        RadToDeg(cand[2]),
+                        RadToDeg(cand[3]),
+                        RadToDeg(cand[4])
+                    )
+
                     self.publish_arm2_joints(cand)
-
-            # else:
-                # cand = [self.q1, self.q2, self.q3, self.q4, self.q5]
-
-                # self.last_q1_cmd = self.q1
-                # self.last_q3_cmd = self.q3
-                # self.last_q4_cmd = self.q4
-
-                # self.publish_arm2_joints(cand)
-                # print("test")
 
             rate.sleep()
     

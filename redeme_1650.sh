@@ -306,6 +306,7 @@ source install/setup.bash
 ros2 control switch_controllers --deactivate forward_position_controller --activate arm_controller
 
 
+meta_depth_camera_info
 
 
 

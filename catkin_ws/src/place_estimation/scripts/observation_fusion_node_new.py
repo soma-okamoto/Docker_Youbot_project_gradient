@@ -54,6 +54,7 @@ config/local_registration_thresholds.yamlから設定する。
 """
 
 import threading
+import copy
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -78,6 +79,9 @@ class ObservationFusionNode:
         self.pred_cov_topic = rospy.get_param(
             "~pred_cov_topic", "/Sigma_pred"
         )
+        self.enable_bottle_id = bool(rospy.get_param("~enable_bottle_id", False))
+        self.pred_with_id_topic = rospy.get_param("~pred_with_id_topic", "/P_pred_with_id")
+        self.place_with_id_topic = rospy.get_param("~place_with_id_topic", "/P_place_with_id")
         self.yolo_topic = rospy.get_param("~yolo_topic", "/P_yolo")
         self.meta_topic = rospy.get_param("~meta_topic", "/P_meta")
 
@@ -383,12 +387,14 @@ class ObservationFusionNode:
         self.pending_pred: Optional[np.ndarray] = None
         self.pending_pred_header = None
         self.pending_cov: Optional[np.ndarray] = None
+        self.pending_bottle_id: Optional[int] = None
 
         # ================================================================
         # Active operation
         # ================================================================
         self.active = False
         self.operation_id = 0
+        self.bottle_id: Optional[int] = None
 
         self.prior: Optional[np.ndarray] = None
         self.prior_cov: Optional[np.ndarray] = None
@@ -415,6 +421,12 @@ class ObservationFusionNode:
             Float32MultiArray,
             queue_size=10,
         )
+        self.place_with_id_pub = None
+        if self.enable_bottle_id:
+            from place_estimation.msg import BottleDistribution
+            self.place_with_id_pub = rospy.Publisher(
+                self.place_with_id_topic, BottleDistribution, queue_size=10
+            )
         self.status_pub = rospy.Publisher(
             self.status_topic, String, queue_size=10
         )
@@ -464,18 +476,22 @@ class ObservationFusionNode:
         # ================================================================
         # Subscribers
         # ================================================================
-        self.pred_sub = rospy.Subscriber(
-            self.pred_topic,
-            PoseStamped,
-            self._pred_cb,
-            queue_size=10,
-        )
-        self.pred_cov_sub = rospy.Subscriber(
-            self.pred_cov_topic,
-            Float32MultiArray,
-            self._pred_cov_cb,
-            queue_size=10,
-        )
+        self.pred_sub = None
+        self.pred_cov_sub = None
+        self.pred_with_id_sub = None
+        if self.enable_bottle_id:
+            from place_estimation.msg import BottleDistribution
+            self.pred_with_id_sub = rospy.Subscriber(
+                self.pred_with_id_topic, BottleDistribution,
+                self._pred_with_id_cb, queue_size=10,
+            )
+        else:
+            self.pred_sub = rospy.Subscriber(
+                self.pred_topic, PoseStamped, self._pred_cb, queue_size=10,
+            )
+            self.pred_cov_sub = rospy.Subscriber(
+                self.pred_cov_topic, Float32MultiArray, self._pred_cov_cb, queue_size=10,
+            )
 
         self.yolo_sub = None
         if self.enable_yolo:
@@ -794,6 +810,28 @@ class ObservationFusionNode:
     # Prior callbacks
     # ====================================================================
 
+    def _pred_with_id_cb(self, message) -> None:
+        position = np.array([message.position.x, message.position.y, message.position.z], dtype=float)
+        covariance = np.asarray(message.covariance, dtype=float)
+        if (message.bottle_id < 0 or not self._valid_position(position)
+                or covariance.size != 9 or not np.all(np.isfinite(covariance))):
+            rospy.logerr_throttle(2.0, "ID-bearing prior contains invalid ID/position/covariance")
+            return
+        if self.expected_frame and message.header.frame_id != self.expected_frame:
+            rospy.logerr_throttle(2.0, "ID-bearing prior frame mismatch")
+            return
+        try:
+            covariance = self._regularize(covariance.reshape(3, 3))
+        except np.linalg.LinAlgError as error:
+            rospy.logerr_throttle(2.0, "Invalid ID-bearing prior covariance: %s", error)
+            return
+        with self.lock:
+            self.pending_pred = position
+            self.pending_cov = covariance
+            self.pending_pred_header = copy.deepcopy(message.header)
+            self.pending_bottle_id = int(message.bottle_id)
+            self._try_start_locked()
+
     def _pred_cb(self, message: PoseStamped) -> None:
         position = self._pose_position(message)
 
@@ -859,10 +897,13 @@ class ObservationFusionNode:
         self.prior = self.pending_pred.copy()
         self.prior_cov = self.pending_cov.copy()
         self.prior_header = self.pending_pred_header
+        # Finalizing the previous operation above still uses its previous ID.
+        self.bottle_id = self.pending_bottle_id
 
         self.pending_pred = None
         self.pending_cov = None
         self.pending_pred_header = None
+        self.pending_bottle_id = None
 
         self.yolo_received = False
         self.meta_received = False
@@ -1868,6 +1909,14 @@ class ObservationFusionNode:
         self.place_cov_pub.publish(
             self._covariance_message(covariance)
         )
+        if self.place_with_id_pub is not None and self.bottle_id is not None:
+            from place_estimation.msg import BottleDistribution
+            identified = BottleDistribution()
+            identified.header = copy.deepcopy(pose.header)
+            identified.bottle_id = self.bottle_id
+            identified.position = copy.deepcopy(pose.pose.position)
+            identified.covariance = covariance.reshape(-1).tolist()
+            self.place_with_id_pub.publish(identified)
         self.status_pub.publish(String(data=status))
 
         if (
@@ -1946,6 +1995,7 @@ class ObservationFusionNode:
 
     def _reset_locked(self) -> None:
         self.active = False
+        self.bottle_id = None
         self.prior = None
         self.prior_cov = None
         self.prior_header = None

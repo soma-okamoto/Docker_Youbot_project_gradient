@@ -1,5 +1,10 @@
 # Local registration data contract
 
+For bottle-ID propagation and the Unity receiver changes, see
+[bottle_id_integration.md](bottle_id_integration.md). With `enable_bottle_id: true`,
+the prior/fusion handoff uses `/P_pred_with_id`, and `/P_place_with_id` carries
+the result with the original bottle ID. Existing output topics remain available.
+
 For the node, launch, topic, and configuration overview, see
 [system_architecture.md](system_architecture.md).
 
@@ -25,10 +30,12 @@ transform or timestamp-check `/P_current`, `/P_yolo`, or array-form `/P_meta`.
 
 ### `/P_current` (`std_msgs/Float32MultiArray`)
 
-`[metadata, x, y, z]`. The current node preserves the legacy metadata field
-but uses only indices 1--3. The preliminary-experiment analyzer interprets a
-positive integer metadata value as the operation ID for robust bag alignment;
-other values fall back to message arrival order.
+`[bottle_id, x, y, z]`. With `enable_bottle_id: true`, the prior preserves index 0
+as the manipulated bottle's identity and returns it with the final position.
+Without that setting, only indices 1--3 are used, as before. The existing
+preliminary-experiment analyzer may interpret index 0 as an operation ID;
+that is distinct from a bottle ID and does not distinguish repeated operations
+on the same bottle.
 
 ### `/P_tf` (`geometry_msgs/PoseStamped`)
 
@@ -47,14 +54,16 @@ tracks, representative means, and representative covariances.
 
 ### `/P_meta` (`std_msgs/Float32MultiArray` by default)
 
-The current stream configuration accepts `[x, y, z, ...]`, with one message
-representing one observation frame. Temporal sample covariance is measured by
-the fusion node. A fixed per-frame sensor covariance is added to the
-representative-mean covariance.
+The current stream configuration accepts the same 12-value position/covariance
+record as YOLO, as published by `track_P_meta.py`. One message represents one
+observation frame and may contain multiple bottle candidates. Meta observations
+must be published on `/P_meta`, separately from RealSense observations on
+`/P_yolo`. Temporal sample covariance and the supplied per-frame covariance
+contribute to the representative-mean covariance.
 
-If Meta supplies per-frame covariance, set `meta_candidate_stride: 12` and
-`meta_covariance_indices: [3, 4, 5, 6, 7, 8, 9, 10, 11]` and use the same
-12-value record as YOLO.
+For an XYZ-only producer, set `meta_candidate_stride: 3` and remove
+`meta_covariance_indices`; the node then uses the fixed per-frame sensor
+covariance from `sigma_meta`.
 
 ## Outputs
 

@@ -242,7 +242,7 @@ flowchart TD
 | `/P_pred` | `PoseStamped` | 事前分布 | 融合、可視化、KL | 事前平均位置 |
 | `/Sigma_pred` | `Float32MultiArray` | 事前分布 | 融合、可視化、KL | 事前3x3共分散 |
 | `/P_yolo` | `Float32MultiArray` | YOLO/RealSense側 | 融合 | 現設定では候補ごとにXYZ＋3x3共分散 |
-| `/P_meta` | `Float32MultiArray` | Meta側 | 融合 | 現設定では1メッセージを1フレームとして扱うXYZ候補 |
+| `/P_meta` | `Float32MultiArray` | Meta側 | 融合 | 現設定では1メッセージを1フレームとして扱うXYZ＋3x3共分散候補 |
 | `/P_place` | `PoseStamped` | 融合 | Unity、可視化、KL | 最終推定位置。Unityが使用する主出力 |
 | `/Sigma_place` | `Float32MultiArray` | 融合 | 可視化、KL | 最終3x3共分散 |
 | `/used_physical_observation` | `PoseWithCovarianceStamped` | 融合 | 事前分布 | 学習に使用する、事前を含まない物理観測分布 |

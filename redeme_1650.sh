@@ -214,6 +214,8 @@ rosrun Yolov5_StrongSORT track_save_cpu_fixed.py --device 0
 ###ato kara zikkou
 rosrun Yolov5_StrongSORT track_P_yolo.py --device 0
 
+rosrun Yolov5_StrongSORT track_P_meta.py
+rosrun Yolov5_StrongSORT track_P_meta_before_qr.py
 
 
 rosrun Yolov5_StrongSORT track_save_gpu.py --device 0 \
@@ -306,7 +308,6 @@ source install/setup.bash
 ros2 control switch_controllers --deactivate forward_position_controller --activate arm_controller
 
 
-meta_depth_camera_info
 
 
 

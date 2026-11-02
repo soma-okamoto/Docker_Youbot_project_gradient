@@ -8,7 +8,7 @@ prior_distribution_node.py
 事前分布 N(P_pred, Sigma_pred) を生成するROS1ノード。
 
 Input
-  /P_current : std_msgs/Float32MultiArray  [x, y, z]
+  /P_current : std_msgs/Float32MultiArray  [bottle_id, x, y, z]
   /P_tf      : geometry_msgs/PoseStamped
 
 Output
@@ -53,6 +53,8 @@ class PriorDistributionNode:
         self.tf_topic = rospy.get_param("~tf_topic", "/P_tf")
         self.pred_topic = rospy.get_param("~pred_topic", "/P_pred")
         self.cov_topic = rospy.get_param("~cov_topic", "/Sigma_pred")
+        self.enable_bottle_id = bool(rospy.get_param("~enable_bottle_id", False))
+        self.pred_with_id_topic = rospy.get_param("~pred_with_id_topic", "/P_pred_with_id")
         self.used_observation_topic = rospy.get_param(
             "~used_observation_topic", "/used_physical_observation"
         )
@@ -149,6 +151,7 @@ class PriorDistributionNode:
 
         # 1操作分の受信待ちデータ
         self.pending_current: Optional[np.ndarray] = None
+        self.pending_bottle_id: Optional[int] = None
         self.pending_tf: Optional[np.ndarray] = None
         self.pending_tf_header = None
         self.operation_count = 0
@@ -159,6 +162,12 @@ class PriorDistributionNode:
         self.cov_pub = rospy.Publisher(
             self.cov_topic, Float32MultiArray, queue_size=10
         )
+        self.pred_with_id_pub = None
+        if self.enable_bottle_id:
+            from place_estimation.msg import BottleDistribution
+            self.pred_with_id_pub = rospy.Publisher(
+                self.pred_with_id_topic, BottleDistribution, queue_size=10
+            )
         self.learned_bias_current_pub = rospy.Publisher(
             self.learned_bias_current_topic,
             Float64MultiArray,
@@ -330,7 +339,7 @@ class PriorDistributionNode:
             rospy.logerr_throttle(
                 2.0,
                 "/P_current requires at least "
-                "4 values [metadata, x, y, z]",
+                "4 values [bottle_id, x, y, z]",
             )
             return
 
@@ -346,6 +355,15 @@ class PriorDistributionNode:
             )
             return
 
+        bottle_id = None
+        if self.enable_bottle_id:
+            value = float(message.data[0])
+            # Float32 encodes every integer exactly only through 2^24.
+            if not np.isfinite(value) or not 0 <= value <= 16777216 or not value.is_integer():
+                rospy.logerr_throttle(2.0, "/P_current bottle_id must be an integer in [0, 16777216]")
+                return
+            bottle_id = int(value)
+
         with self.lock:
             if self.pending_current is not None:
                 rospy.logwarn_throttle(
@@ -356,6 +374,7 @@ class PriorDistributionNode:
                 return
 
             self.pending_current = position
+            self.pending_bottle_id = bottle_id
             rospy.loginfo(
                 "P_current received: %s",
                 position,
@@ -415,9 +434,11 @@ class PriorDistributionNode:
         raw_current = self.pending_current.copy()
         raw_tf = self.pending_tf.copy()
         tf_header = self.pending_tf_header
+        bottle_id = self.pending_bottle_id
 
         # 同じ入力を次のPlace操作で再利用しない。
         self.pending_current = None
+        self.pending_bottle_id = None
         self.pending_tf = None
         self.pending_tf_header = None
 
@@ -475,6 +496,7 @@ class PriorDistributionNode:
             frame_id,
             stamp,
             operation_id,
+            bottle_id,
         )
 
         rospy.loginfo(
@@ -756,6 +778,7 @@ class PriorDistributionNode:
         frame_id: str,
         stamp,
         operation_id: int,
+        bottle_id: Optional[int] = None,
     ) -> None:
         pred_message = PoseStamped()
         pred_message.header.seq = operation_id
@@ -803,6 +826,14 @@ class PriorDistributionNode:
         self.cov_pub.publish(
             covariance_message
         )
+        if self.pred_with_id_pub is not None and bottle_id is not None:
+            from place_estimation.msg import BottleDistribution
+            identified = BottleDistribution()
+            identified.header = pred_message.header
+            identified.bottle_id = bottle_id
+            identified.position = pred_message.pose.position
+            identified.covariance = covariance.reshape(-1).tolist()
+            self.pred_with_id_pub.publish(identified)
 
 
 def main() -> None:

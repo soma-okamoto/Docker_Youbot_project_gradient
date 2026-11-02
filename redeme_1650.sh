@@ -175,8 +175,8 @@ roslaunch place_estimation preliminary_experiment.launch \
 #実験終了後：
 rosrun place_estimation preliminary_experiment_analyzer.py \
   /保存先/preliminary_01.bag \
-  /保存先/preliminary_01_analysis
-
+  /保存先/preliminary_01_analysis \
+  --meta-stride 12
 
 ########
 catkin clean -f 

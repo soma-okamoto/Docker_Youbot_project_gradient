@@ -8,6 +8,8 @@ cov_topic: /Sigma_pred
 # Atomic bottle ID + prior mean/covariance, alongside existing outputs.
 enable_bottle_id: true
 pred_with_id_topic: /P_pred_with_id
+publish_prior_context: true
+prior_context_topic: /P_pred_context
 used_observation_topic: /used_physical_observation
 learned_bias_current_topic: /learned_bias_current
 learned_bias_tf_topic: /learned_bias_tf

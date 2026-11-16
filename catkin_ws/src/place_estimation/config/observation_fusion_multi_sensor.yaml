@@ -9,6 +9,10 @@ pred_cov_topic: /Sigma_pred
 # Receive the ID and its distribution together; do not pair a separate ID topic.
 enable_bottle_id: true
 pred_with_id_topic: /P_pred_with_id
+# Atomic prior + original and bias-corrected Current/TF hypotheses.
+use_prior_source_guard: true
+prior_context_topic: /P_pred_context
+reference_distances_topic: /observation_reference_distances
 yolo_topic: /P_yolo
 meta_topic: /P_meta
 

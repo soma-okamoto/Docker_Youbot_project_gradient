@@ -2,6 +2,8 @@
 """ROS node evaluating KL divergence between prior and posterior Gaussians."""
 from collections import deque
 import json
+from pathlib import Path
+import sys
 import threading
 
 import numpy as np
@@ -9,8 +11,22 @@ import rospy
 from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Float32MultiArray, Float64MultiArray, String
 
-from gaussian_kl import evaluate_prior_posterior
-from kl_trend import evaluate_adaptation_history
+try:
+    from gaussian_kl import evaluate_prior_posterior
+    from kl_trend import evaluate_adaptation_history
+except ModuleNotFoundError as error:
+    if error.name not in {"gaussian_kl", "kl_trend"}:
+        raise
+    # catkin's devel-space wrapper runs this file without adding evaluation/
+    # to sys.path. Locate the helpers through the ROS package in that case.
+    import rospkg
+
+    evaluation_directory = (
+        Path(rospkg.RosPack().get_path("place_estimation")) / "evaluation"
+    )
+    sys.path.insert(0, str(evaluation_directory))
+    from gaussian_kl import evaluate_prior_posterior
+    from kl_trend import evaluate_adaptation_history
 
 
 class KLEvaluationNode:

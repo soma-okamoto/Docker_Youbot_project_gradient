@@ -44,7 +44,11 @@ def record(x, covariance):
 
 class StabilityTests(unittest.TestCase):
     def node(self, **params):
-        settings = {'~meta_message_type': 'float32_multi_array'}
+        # Existing stability/CI cases deliberately use observations metres from
+        # the prior. Keep them inside a wide gate; gate-specific cases below
+        # explicitly use the production default (25).
+        settings = {'~meta_message_type': 'float32_multi_array',
+                    '~candidate_gate_yolo': 20000., '~candidate_gate_meta': 20000.}
         settings.update({'~' + k: v for k, v in params.items()})
         rospy.get_param = lambda name, default=None: settings.get(name, default)
         rospy.has_param = lambda name: name in settings
@@ -111,6 +115,158 @@ class StabilityTests(unittest.TestCase):
         self.assertEqual(out['status'], 'prior_yolo_meta_fused')
         np.testing.assert_allclose(out['position'], [5.0033, 0., 0.])
         np.testing.assert_allclose(out['covariance'], cov(.05))
+
+    def test_consistent_pair_prefers_prior_proximity_over_perfect_agreement(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        # Both pairs pass all gates; the farther pair agrees perfectly.
+        out = self.finish(node, [(5.01, cov(.02)), (5.20, cov(.02))],
+                          [(5.02, cov(.02)), (5.20, cov(.02))])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+        self.assertEqual(out['status'], 'prior_yolo_meta_fused')
+        self.assertGreater(out['d2_pair'], 0.)
+
+    def test_source_guard_rescues_observation_without_fusing_far_prior(self):
+        for source in ('current', 'tf'):
+            with self.subTest(source=source):
+                node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+                node.prior_sources = {source: (np.array([0., 0., 0.]), cov(.05))}
+                out = self.finish(node, [(.01, cov(.02))], [])
+                self.assertEqual(out['status'], 'yolo_only')
+                self.assertGreater(out['d2_yolo'], 25.)
+                self.assertGreater(out['yolo_scores'][0], 0.)
+                np.testing.assert_allclose(out['position'], [.01, 0., 0.])
+                self.assertIsNotNone(out['used_observation_position'])
+                self.assertEqual(node.prior_sources, {})
+
+    def test_source_guard_rescues_consistent_pair(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior_sources = {'current': (np.zeros(3), cov(.05))}
+        out = self.finish(node, [(.01, cov(.02))], [(.02, cov(.02))])
+        self.assertEqual(out['status'], 'yolo_meta_fused')
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+
+    def test_source_guard_keeps_fused_prior_candidates_as_first_choice(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior_sources = {'current': (np.zeros(3), cov(.05))}
+        out = self.finish(node, [(0., cov(.02)), (5.01, cov(.02))],
+                          [(0., cov(.02)), (5.02, cov(.02))])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (1, 1))
+        self.assertEqual(out['status'], 'prior_yolo_meta_fused')
+
+    def test_source_guard_rejects_observations_far_from_every_reference(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior_sources = {'current': (np.zeros(3), cov(.05)),
+                              'tf': (np.array([5., 0., 0.]), cov(.02))}
+        out = self.finish(node, [(2., cov(.02))], [(2., cov(.02))])
+        self.assertEqual(out['status'], 'no_valid_observation')
+
+    def test_source_guard_still_requires_valid_observation_covariance(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior_sources = {'current': (np.zeros(3), cov(.05))}
+        out = self.finish(node, [(0., cov(.2))], [])
+        self.assertEqual(out['status'], 'no_valid_observation')
+
+    def test_reported_high_arm_snapshot_is_rescued_by_current(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior = np.array([.1706291557, -.2535352473, .3116912362])
+        node.prior_cov = np.diag([.0004, .0004, .0009])
+        node.prior_sources = {
+            'current': (np.array([.1239973456, -.3110205233, .1051122546]), cov(.05)),
+            'tf': (node.prior.copy(), node.prior_cov.copy()),
+        }
+        observation = np.array([.1728138030, -.2875822484, .1157009080])
+        node.yolo_candidates = [observation]
+        node.yolo_covariances = [np.diag([.000025, .000025, .0001])]
+        references = node._reference_distances(observation, node.yolo_covariances[0])
+        self.assertGreater(references['prior'], 25.)
+        self.assertLess(references['current'], 7.815)
+        node.yolo_received = True
+        node._finalize_locked('test')
+        out = node._publish.call_args.kwargs
+        self.assertEqual(out['status'], 'yolo_only')
+        np.testing.assert_allclose(out['position'], observation)
+
+    def test_far_agreeing_pair_cannot_replace_near_pair(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(5.01, cov(.02)), (6., cov(.02))],
+                          [(5.02, cov(.02)), (6., cov(.02))])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+        self.assertEqual(out['yolo_scores'][1], 0.)
+        self.assertEqual(out['meta_scores'][1], 0.)
+        self.assertGreater(out['yolo_distances'][1], 25.)
+
+    def test_far_agreeing_observations_use_prior_without_learning_feedback(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(6., cov(.02))], [(6., cov(.02))])
+        self.assertEqual(out['status'], 'no_valid_observation')
+        self.assertEqual((out['yolo_index'], out['meta_index']), (-1, -1))
+        np.testing.assert_allclose(out['position'], [5., 0., 0.])
+        self.assertIsNone(out['used_observation_position'])
+        self.assertIsNone(out['used_observation_covariance'])
+
+    def test_single_sensor_rejects_far_candidate(self):
+        for sensor in ('yolo', 'meta'):
+            with self.subTest(sensor=sensor):
+                node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+                out = self.finish(node, [(6., cov(.02))] if sensor == 'yolo' else [],
+                                  [(6., cov(.02))] if sensor == 'meta' else [])
+                self.assertEqual(out['status'], 'no_valid_observation')
+                self.assertEqual(out[sensor + '_index'], -1)
+
+    def test_agreeing_observations_between_ci_and_candidate_gates_are_used(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(5.20, cov(.02))], [(5.20, cov(.02))])
+        self.assertEqual(out['status'], 'yolo_meta_fused')
+        np.testing.assert_allclose(out['position'], [5.20, 0., 0.])
+        self.assertIsNotNone(out['used_observation_position'])
+
+    def test_pair_must_be_consistent_even_if_individual_candidates_are_near(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(4.90, cov(.02)), (5.22, cov(.02))],
+                          [(5.10, cov(.02)), (5.22, cov(.02))])
+        # Independently closest candidates are inconsistent; use the matching
+        # pair that is still inside the hard gates, without including the prior.
+        self.assertEqual((out['yolo_index'], out['meta_index']), (1, 1))
+        self.assertEqual(out['status'], 'yolo_meta_fused')
+
+    def test_rejected_pair_cannot_reenter_when_no_eligible_pair_agrees(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(4.90, cov(.02)), (6., cov(.02))],
+                          [(5.10, cov(.02)), (6., cov(.02))])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+        self.assertEqual(out['status'], 'sensor_mismatch_equal_uncertainty_prior_used')
+
+    def test_candidate_gate_boundary_is_inclusive(self):
+        for sensor in ('yolo', 'meta'):
+            for x, expected in ((5.5, True), (5.5001, False)):
+                with self.subTest(sensor=sensor, x=x):
+                    node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+                    node.prior_cov = cov(.06)
+                    # Combined variance .01 -> d²=25 at a .5 m residual.
+                    obs = [(x, cov(.08))]
+                    out = self.finish(node, obs if sensor == 'yolo' else [],
+                                      obs if sensor == 'meta' else [])
+                    self.assertEqual(out[sensor + '_index'], 0 if expected else -1)
+
+    def test_candidate_gate_configuration_is_validated(self):
+        for sensor in ('yolo', 'meta'):
+            for value in (0., -1., 7., float('nan'), float('inf')):
+                with self.subTest(sensor=sensor, value=value), self.assertRaises(ValueError):
+                    self.node(**{'candidate_gate_' + sensor: value})
+        # Equality with the CI gate is valid.
+        self.node(candidate_gate_yolo=7.815, candidate_gate_meta=7.815)
+
+    def test_meta_stream_selects_near_track_over_far_agreeing_track(self):
+        node = self.node(meta_input_mode='stream', meta_candidate_stride=12,
+                         meta_covariance_indices=list(range(3, 12)),
+                         candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node._yolo_array_cb(SimpleNamespace(data=record(5.01, cov(.02)) + record(6., cov(.02))))
+        for x in (5.02, 5.021, 5.019):
+            node._meta_array_cb(SimpleNamespace(data=record(x, cov(.02)) + record(6., cov(.02))))
+        node._timeout_cb(None)
+        out = node._publish.call_args.kwargs
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+        self.assertEqual(out['status'], 'prior_yolo_meta_fused')
 
     def test_ci_optimizer_minimizes_trace(self):
         node = self.node(observation_ci_weight_mode='optimize',

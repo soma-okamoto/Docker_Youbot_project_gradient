@@ -39,11 +39,13 @@ class BagExtractor:
         self.trials: Dict[int, Dict[str, object]] = {}
         self.learning: Dict[int, Dict[str, object]] = {}
         self.pending_current = None
+        self.pending_bottle_id = None
         self.pending_tf = None
         self.active_operation_id: Optional[int] = None
         self.prior_covariance_queue = deque()
         self.posterior_covariance_queue = deque()
         self.final_adaptation_summary = None
+        self.prior_operations_by_stamp = {}
 
     def _trial(self, operation_id: int) -> Dict[str, object]:
         return self.trials.setdefault(
@@ -109,20 +111,13 @@ class BagExtractor:
         if topic == "/P_current":
             values = np.asarray(message.data, dtype=float)
             if values.size >= 4 and np.all(np.isfinite(values[1:4])):
-                # In the current data contract, element 0 is metadata.  If it
-                # is a positive integer, use it as the operation ID; otherwise
-                # retain arrival-order matching as a compatibility fallback.
-                metadata_id = (
+                # Element 0 identifies a bottle, not a Place operation.
+                self.pending_bottle_id = (
                     int(values[0])
                     if np.isfinite(values[0]) and values[0].is_integer()
-                    else 0
+                    else None
                 )
-                if metadata_id > 0:
-                    self._assign_vector(
-                        self._trial(metadata_id), "current", values[1:4]
-                    )
-                else:
-                    self.pending_current = values[1:4].copy()
+                self.pending_current = values[1:4].copy()
             return
 
         if topic == "/P_tf":
@@ -141,16 +136,33 @@ class BagExtractor:
             if operation_id is None:
                 return
             self.active_operation_id = operation_id
+            stamp = message.header.stamp.to_nsec()
+            self.prior_operations_by_stamp.setdefault(stamp, []).append(operation_id)
             row = self._trial(operation_id)
             row["prior_time_s"] = timestamp
             self._assign_vector(row, "pred", self._position(message))
             if self.pending_current is not None:
                 self._assign_vector(row, "current", self.pending_current)
                 self.pending_current = None
+                row["bottle_id"] = self.pending_bottle_id
+                self.pending_bottle_id = None
             if self.pending_tf is not None:
                 self._assign_vector(row, "tf", self.pending_tf)
                 self.pending_tf = None
             self.prior_covariance_queue.append(operation_id)
+            return
+
+        if topic == "/P_pred_context":
+            row = self._trial(message.operation_id)
+            row["bottle_id"] = int(message.bottle_id)
+            for name in ("raw_current", "raw_tf", "current", "tf"):
+                point = getattr(message, name + "_position")
+                self._assign_vector(row, "source_" + name, [point.x, point.y, point.z])
+                if name.startswith("raw_"):
+                    self._assign_vector(row, name[4:], [point.x, point.y, point.z])
+            for name in ("current", "tf"):
+                self._assign_covariance(row, "source_" + name + "_cov",
+                                        getattr(message, name + "_covariance"))
             return
 
         if topic == "/Sigma_pred":
@@ -182,11 +194,14 @@ class BagExtractor:
             return
 
         if topic == "/used_physical_observation":
-            operation_id = self._operation_id(
-                message, self.active_operation_id
+            # Header.seq counts feedback publications, not Place operations.
+            # This topic echoes the selected operation's prior timestamp.
+            matches = self.prior_operations_by_stamp.get(
+                message.header.stamp.to_nsec(), []
             )
-            if operation_id is None:
+            if len(matches) != 1:
                 return
+            operation_id = matches[0]
             row = self._trial(operation_id)
             self._assign_vector(row, "used", self._position(message.pose))
             covariance = np.asarray(
@@ -214,6 +229,15 @@ class BagExtractor:
             )
             for label, value in zip(labels, values[:3]):
                 row[label] = float(value) if np.isfinite(value) else None
+            return
+
+        if topic == "/observation_reference_distances" and self.active_operation_id:
+            labels = [sensor + "_to_" + reference + "_d2"
+                      for sensor in ("yolo", "meta") for reference in ("prior", "current", "tf")]
+            for label, value in zip(labels, message.data):
+                self._trial(self.active_operation_id)[label] = (
+                    float(value) if np.isfinite(value) else None
+                )
             return
 
         if topic in {
@@ -379,6 +403,7 @@ def main():
     extractor = BagExtractor(arguments.yolo_stride, arguments.meta_stride)
     topics = [
         "/P_current", "/P_tf", "/P_pred", "/Sigma_pred",
+        "/P_pred_context", "/observation_reference_distances",
         "/P_yolo", "/P_meta", "/P_place", "/Sigma_place",
         "/observation_status", "/observation_distances",
         "/yolo_candidate_distances", "/meta_candidate_distances",
@@ -413,6 +438,16 @@ def main():
     )
     report["source_bag"] = str(Path(arguments.bag).resolve())
     report["final_adaptation_summary"] = extractor.final_adaptation_summary
+    unmatched_learning = [
+        row["operation_id"] for row in learning
+        if extractor.trials.get(row["operation_id"], {}).get("used_x") is None
+    ]
+    if unmatched_learning:
+        report["warnings"].append(
+            "Learning updates have no timestamp-matched physical observation "
+            "for operation IDs %s; their trial association may be incorrect."
+            % unmatched_learning
+        )
     with (output_directory / "parameter_report.json").open(
         "w", encoding="utf-8"
     ) as stream:

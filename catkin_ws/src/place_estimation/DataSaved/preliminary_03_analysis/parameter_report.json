@@ -1,0 +1,244 @@
+{
+  "current_min_variance_m2": 1e-08,
+  "data_completeness": {
+    "KL_evaluation": 41,
+    "P_current": 41,
+    "P_tf": 41,
+    "posterior_distribution": 41,
+    "prior_distribution": 41
+  },
+  "distributions": {
+    "kl_prior_to_posterior": {
+      "count": 41,
+      "maximum": 131.5243441037752,
+      "mean": 3.207910831799395,
+      "minimum": 0.0,
+      "p05": 0.0,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 78.91460646226531,
+      "sample_std": 20.54065159861808
+    },
+    "mean_shift_m": {
+      "count": 41,
+      "maximum": 0.1321073721709037,
+      "mean": 0.003222131028558627,
+      "minimum": 0.0,
+      "p05": 0.0,
+      "p50": 0.0,
+      "p90": 0.0,
+      "p95": 0.0,
+      "p99": 0.07926442330254241,
+      "sample_std": 0.02063170528514818
+    },
+    "selected_meta_d2": {
+      "count": 0
+    },
+    "selected_yolo_d2": {
+      "count": 1,
+      "maximum": 22.896512985229492,
+      "mean": 22.896512985229492,
+      "minimum": 22.896512985229492,
+      "p05": 22.896512985229492,
+      "p50": 22.896512985229492,
+      "p90": 22.896512985229492,
+      "p95": 22.896512985229492,
+      "p99": 22.896512985229492,
+      "sample_std": 0.0
+    },
+    "selected_yolo_meta_d2": {
+      "count": 0
+    },
+    "used_observation_principal_std_m": {
+      "count": 1,
+      "maximum": 0.016368368519055654,
+      "mean": 0.016368368519055654,
+      "minimum": 0.016368368519055654,
+      "p05": 0.016368368519055654,
+      "p50": 0.016368368519055654,
+      "p90": 0.016368368519055654,
+      "p95": 0.016368368519055654,
+      "p99": 0.016368368519055654,
+      "sample_std": 0.0
+    },
+    "yolo_candidate_principal_std_m": {
+      "count": 45,
+      "maximum": 0.022841467889733017,
+      "mean": 0.011249203220990982,
+      "minimum": 0.010000048258948931,
+      "p05": 0.010000116798745753,
+      "p50": 0.010002455233141617,
+      "p90": 0.016248898805544747,
+      "p95": 0.018636857239189245,
+      "p99": 0.022776427536392103,
+      "sample_std": 0.003250391462174799
+    }
+  },
+  "final_adaptation_summary": {
+    "adaptation_state": "worsening",
+    "covariance_component_trend": {
+      "count": 41,
+      "first": 0.0,
+      "initial_window_mean": 0.0,
+      "latest": 11.863491072096227,
+      "maximum": 11.863491072096227,
+      "minimum": 0.0,
+      "normalized_recent_slope": 1.5,
+      "overall_change": "worsened",
+      "recent_direction": "increasing",
+      "recent_slope_per_trial": 5.931745536048114,
+      "recent_window_mean": 3.954497024032076,
+      "relative_improvement": -1.7809471323868592e+16,
+      "slope_per_trial": 0.041336205826119264
+    },
+    "kl_trend": {
+      "count": 41,
+      "first": 0.0,
+      "initial_window_mean": 0.0,
+      "latest": 131.5243441037752,
+      "maximum": 131.5243441037752,
+      "minimum": 0.0,
+      "normalized_recent_slope": 1.5,
+      "overall_change": "worsened",
+      "recent_direction": "increasing",
+      "recent_slope_per_trial": 65.7621720518876,
+      "recent_window_mean": 43.841448034591735,
+      "relative_improvement": -1.974443290319703e+17,
+      "slope_per_trial": 0.45827297597134226
+    },
+    "latest": {
+      "covariance_component": 11.863491072096227,
+      "kl_prior_to_posterior": 131.5243441037752,
+      "mean_component": 119.66085303167898,
+      "mean_shift_m": 0.1321073721709037
+    },
+    "latest_operation_id": 41,
+    "mean_component_trend": {
+      "count": 41,
+      "first": 0.0,
+      "initial_window_mean": 0.0,
+      "latest": 119.66085303167898,
+      "maximum": 119.66085303167898,
+      "minimum": 0.0,
+      "normalized_recent_slope": 1.5,
+      "overall_change": "worsened",
+      "recent_direction": "increasing",
+      "recent_slope_per_trial": 59.83042651583949,
+      "recent_window_mean": 39.88695101055966,
+      "relative_improvement": -1.7963485770810173e+17,
+      "slope_per_trial": 0.41693677014522296
+    },
+    "mean_shift_trend": {
+      "count": 41,
+      "first": 0.0,
+      "initial_window_mean": 0.0,
+      "latest": 0.1321073721709037,
+      "maximum": 0.1321073721709037,
+      "minimum": 0.0,
+      "normalized_recent_slope": 1.5,
+      "overall_change": "worsened",
+      "recent_direction": "increasing",
+      "recent_slope_per_trial": 0.06605368608545185,
+      "recent_window_mean": 0.04403579072363457,
+      "relative_improvement": -198319570693925.78,
+      "slope_per_trial": 0.0004603044326512325
+    },
+    "sample_count": 41,
+    "schema_version": 1
+  },
+  "learned_covariance_eigenvalues_m2": {
+    "count": 6,
+    "maximum": 0.0025000000000000005,
+    "mean": 0.0015333333333333334,
+    "minimum": 0.0004,
+    "p05": 0.0004,
+    "p50": 0.0017000000000000001,
+    "p90": 0.0025000000000000005,
+    "p95": 0.0025000000000000005,
+    "p99": 0.0025000000000000005,
+    "sample_std": 0.0010745541711178024
+  },
+  "learning_update_count": 1,
+  "min_variance_floor_hit_count": 0,
+  "operation_error_repeatability": {
+    "current_minus_used_observation": {
+      "count": 1,
+      "mean": [
+        0.014400914311408997,
+        -0.06171730160713196,
+        0.0354401171207428
+      ],
+      "sample_covariance": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "sample_std": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "tf_minus_used_observation": {
+      "count": 1,
+      "mean": [
+        0.05800051066094736,
+        -0.03281073238029322,
+        0.21874221904065339
+      ],
+      "sample_covariance": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "sample_std": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "parameter_candidates": {
+    "bias_stability_tolerance_m": 0.002,
+    "gate_meta_p95_diagnostic": null,
+    "gate_yolo_meta_p95_diagnostic": null,
+    "gate_yolo_p95_diagnostic": 22.896512985229492,
+    "learning_min_samples_stability_candidate": null,
+    "max_std_yolo_p95_m_diagnostic": 0.018636857239189245,
+    "stable_updates_required": 3
+  },
+  "schema_version": 1,
+  "source_bag": "/root/catkin_ws/src/place_estimation/DataSaved/preliminary_03.bag",
+  "trial_count": 41,
+  "warnings": [
+    "These values describe repeatability and internal consistency; they do not measure absolute accuracy without ground truth.",
+    "P95 values are diagnostic candidates only. Freeze parameters using separate calibration data before the main experiment.",
+    "Distance distributions are affected by the current covariance and candidate-selection settings.",
+    "The recorded bias history did not establish a learning_min_samples candidate."
+  ]
+}

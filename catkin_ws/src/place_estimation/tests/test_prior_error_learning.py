@@ -41,7 +41,7 @@ def used_observation(seq, position, covariance, frame='base_footprint'):
     covariance_6d = np.zeros((6, 6), dtype=float)
     covariance_6d[:3, :3] = covariance
     return SimpleNamespace(
-        header=SimpleNamespace(seq=seq, frame_id=frame),
+        header=SimpleNamespace(seq=seq, stamp=seq, frame_id=frame),
         pose=SimpleNamespace(
             pose=SimpleNamespace(
                 position=SimpleNamespace(
@@ -71,6 +71,7 @@ class ErrorLearningTests(unittest.TestCase):
         node.pending_learning_samples[1] = (
             np.array([1.1, 0., 0.]), np.array([.9, 0., 0.])
         )
+        node.pending_learning_stamps[1] = 1
         node._used_observation_callback(
             used_observation(1, [1., 0., 0.], observation_covariance)
         )
@@ -80,6 +81,7 @@ class ErrorLearningTests(unittest.TestCase):
         node.pending_learning_samples[2] = (
             np.array([1.3, 0., 0.]), np.array([.7, 0., 0.])
         )
+        node.pending_learning_stamps[2] = 2
         node._used_observation_callback(
             used_observation(2, [1., 0., 0.], observation_covariance)
         )
@@ -95,6 +97,36 @@ class ErrorLearningTests(unittest.TestCase):
         published = node.learned_bias_current_pub.publish.call_args.args[0]
         np.testing.assert_allclose(published.data, [2., 2., .2, 0., 0.])
         self.assertEqual(node.learning_sample_count_pub.publish.call_count, 2)
+
+    def test_sparse_feedback_matches_timestamp_instead_of_publisher_sequence(self):
+        node = self.node()
+        node.pending_learning_samples = {
+            1: (np.array([9., 0., 0.]), np.array([8., 0., 0.])),
+            41: (np.array([1.1, 0., 0.]), np.array([.9, 0., 0.])),
+        }
+        node.pending_learning_stamps = {1: 100, 41: 200}
+        message = used_observation(1, [1., 0., 0.], np.eye(3) * 1.e-4)
+        message.header.stamp = 200
+        node._used_observation_callback(message)
+        np.testing.assert_allclose(node.bias_current, [.1, 0., 0.])
+        np.testing.assert_allclose(node.bias_tf, [-.1, 0., 0.])
+        self.assertIn(1, node.pending_learning_samples)
+        self.assertNotIn(41, node.pending_learning_samples)
+        self.assertEqual(node.learned_bias_current_pub.publish.call_args.args[0].data[0], 41.)
+
+    def test_missing_or_ambiguous_feedback_timestamp_cannot_update_learning(self):
+        for stamps in ({1: 100}, {1: 200, 2: 200}):
+            with self.subTest(stamps=stamps):
+                node = self.node()
+                node.pending_learning_samples = {
+                    key: (np.zeros(3), np.zeros(3)) for key in stamps
+                }
+                node.pending_learning_stamps = stamps
+                message = used_observation(1, [1., 0., 0.], np.eye(3) * 1.e-4)
+                message.header.stamp = 200
+                node._used_observation_callback(message)
+                self.assertEqual(node.learning_count, 0)
+                self.assertEqual(len(node.pending_learning_samples), len(stamps))
 
     def test_unknown_or_wrong_frame_feedback_is_ignored(self):
         node = self.node()

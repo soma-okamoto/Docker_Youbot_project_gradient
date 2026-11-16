@@ -11,9 +11,11 @@
         args="-O $(arg output_bag)
               /P_current /P_tf
               /P_pred /Sigma_pred
+              /P_pred_context
               /P_yolo /P_meta
               /P_place /Sigma_place
               /observation_status /observation_distances
+              /observation_reference_distances
               /yolo_candidate_distances /yolo_candidate_scores
               /yolo_selected_index
               /meta_candidate_distances /meta_candidate_scores

@@ -38,7 +38,9 @@ covarianceはrow-major 3×3、位置はm、共分散はm²。
 
 既存の `/P_pred`、`/Sigma_pred`、`/P_place`、`/Sigma_place` も従来の型で配信する。
 可視化・評価の購読先を変更する必要はない。
-ID有効時のfusionは `/P_pred_with_id` だけを事前入力として購読する。
+既定Configでは`/P_pred_context`を事前入力として購読し、元のCurrent/TFも同じ
+操作の仮説として保持する。`use_prior_source_guard: false`の場合、ID有効時のfusionは
+`/P_pred_with_id`だけを事前入力として購読する。
 同じ事前分布が新旧両トピックから二重入力されることはない。
 
 `config/prior_distribution.yaml`:

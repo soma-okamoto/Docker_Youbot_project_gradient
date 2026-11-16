@@ -52,11 +52,13 @@ preliminary_01_analysis/
 試行IDごとに以下をまとめます。
 
 - `P_current`、`P_tf`
+- 同じ操作の元入力・バイアス補正後のCurrent/TFと共分散（`/P_pred_context`）
 - 事前位置・共分散
 - `P_place`・`Sigma_place`
 - 採用物理観測・共分散
 - 観測分岐
 - YOLO、Meta、センサ間のマハラノビス距離
+- 選択観測から事前・Current・TFそれぞれへの距離（`/observation_reference_distances`）
 - KL、平均位置差、累積平均、EMA
 - 入力候補数・メッセージ数
 

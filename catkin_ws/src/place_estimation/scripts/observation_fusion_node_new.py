@@ -34,9 +34,10 @@ N(P_place, Sigma_place) を生成するROS1ノード。
 
 候補選択と融合:
 - 非有限、非正定値、または最大主軸標準偏差が上限を超える候補を棄却する。
-- 事前分布とのマハラノビス距離は候補診断と、事前をCIへ含めるかの判定に
-  使用する。事前から遠いという理由だけでは物理観測を棄却しない。
-- YOLOとMetaが整合する場合は、最も整合する候補組を選択してCI融合する。
+- 事前分布を優先し、元のCurrent/TF仮説への近さでも候補を救済する。
+  すべての参照から距離閾値を超える観測は棄却する。
+- 整合する候補組から救済数が少ない組を優先し、参照への距離合計、
+  観測同士の距離の順で選択してCI融合する。
 - 両観測が競合する場合は共分散traceが小さい方を採用し、同程度なら
   事前分布へフォールバックする。
 - 事前と採用観測が近ければ事前を含むCI、遠ければ物理観測のみのCIを行う。
@@ -81,6 +82,11 @@ class ObservationFusionNode:
         )
         self.enable_bottle_id = bool(rospy.get_param("~enable_bottle_id", False))
         self.pred_with_id_topic = rospy.get_param("~pred_with_id_topic", "/P_pred_with_id")
+        self.use_prior_source_guard = bool(rospy.get_param("~use_prior_source_guard", False))
+        self.prior_context_topic = rospy.get_param("~prior_context_topic", "/P_pred_context")
+        self.reference_distances_topic = rospy.get_param(
+            "~reference_distances_topic", "/observation_reference_distances"
+        )
         self.place_with_id_topic = rospy.get_param("~place_with_id_topic", "/P_place_with_id")
         self.yolo_topic = rospy.get_param("~yolo_topic", "/P_yolo")
         self.meta_topic = rospy.get_param("~meta_topic", "/P_meta")
@@ -244,8 +250,8 @@ class ObservationFusionNode:
         )
 
         # ================================================================
-        # Prior gates decide whether the prior participates in CI. A distant
-        # physical observation is still valid and is fused without the prior.
+        # Tight prior gates control CI participation; separate, wider candidate
+        # gates reject observations too far from the manipulated object's prior.
         # ================================================================
         self.gate_yolo = float(
             rospy.get_param("~gate_yolo", 7.815)
@@ -266,6 +272,23 @@ class ObservationFusionNode:
             )
         ):
             raise ValueError("gate thresholds must be finite and positive")
+
+        self.candidate_gate_yolo = float(
+            rospy.get_param("~candidate_gate_yolo", 25.0)
+        )
+        self.candidate_gate_meta = float(
+            rospy.get_param("~candidate_gate_meta", 25.0)
+        )
+        for sensor in ("yolo", "meta"):
+            candidate_gate = getattr(self, "candidate_gate_" + sensor)
+            if (
+                not np.isfinite(candidate_gate)
+                or candidate_gate < getattr(self, "gate_" + sensor)
+            ):
+                raise ValueError(
+                    "~candidate_gate_%s must be finite and >= ~gate_%s"
+                    % (sensor, sensor)
+                )
 
         self.uncertainty_trace_rtol = float(
             rospy.get_param(
@@ -388,6 +411,7 @@ class ObservationFusionNode:
         self.pending_pred_header = None
         self.pending_cov: Optional[np.ndarray] = None
         self.pending_bottle_id: Optional[int] = None
+        self.pending_prior_sources = {}
 
         # ================================================================
         # Active operation
@@ -399,6 +423,7 @@ class ObservationFusionNode:
         self.prior: Optional[np.ndarray] = None
         self.prior_cov: Optional[np.ndarray] = None
         self.prior_header = None
+        self.prior_sources = {}
 
         self.yolo_received = False
         self.meta_received = False
@@ -440,6 +465,9 @@ class ObservationFusionNode:
             Float32MultiArray,
             queue_size=10,
         )
+        self.reference_distances_pub = rospy.Publisher(
+            self.reference_distances_topic, Float32MultiArray, queue_size=10,
+        )
 
         self.yolo_distances_pub = rospy.Publisher(
             self.yolo_distances_topic,
@@ -479,7 +507,14 @@ class ObservationFusionNode:
         self.pred_sub = None
         self.pred_cov_sub = None
         self.pred_with_id_sub = None
-        if self.enable_bottle_id:
+        self.prior_context_sub = None
+        if self.use_prior_source_guard:
+            from place_estimation.msg import PriorContext
+            self.prior_context_sub = rospy.Subscriber(
+                self.prior_context_topic, PriorContext,
+                self._pred_context_cb, queue_size=10,
+            )
+        elif self.enable_bottle_id:
             from place_estimation.msg import BottleDistribution
             self.pred_with_id_sub = rospy.Subscriber(
                 self.pred_with_id_topic, BottleDistribution,
@@ -810,10 +845,32 @@ class ObservationFusionNode:
     # Prior callbacks
     # ====================================================================
 
+    def _pred_context_cb(self, message) -> None:
+        sources = {}
+        try:
+            if message.operation_id <= 0:
+                raise ValueError("invalid operation ID")
+            for name in ("current", "tf"):
+                point = getattr(message, name + "_position")
+                position = np.array([point.x, point.y, point.z], dtype=float)
+                covariance = self._stable_covariance(
+                    np.asarray(getattr(message, name + "_covariance")), np.inf
+                )
+                if not self._valid_position(position) or covariance is None:
+                    raise ValueError("invalid " + name + " source")
+                sources[name] = (position, covariance)
+        except (ValueError, np.linalg.LinAlgError) as error:
+            rospy.logerr_throttle(2.0, "Invalid prior context: %s", error)
+            return
+        self._accept_prior_with_sources(message, sources)
+
     def _pred_with_id_cb(self, message) -> None:
+        self._accept_prior_with_sources(message, {})
+
+    def _accept_prior_with_sources(self, message, sources) -> None:
         position = np.array([message.position.x, message.position.y, message.position.z], dtype=float)
         covariance = np.asarray(message.covariance, dtype=float)
-        if (message.bottle_id < 0 or not self._valid_position(position)
+        if ((self.enable_bottle_id and message.bottle_id < 0) or not self._valid_position(position)
                 or covariance.size != 9 or not np.all(np.isfinite(covariance))):
             rospy.logerr_throttle(2.0, "ID-bearing prior contains invalid ID/position/covariance")
             return
@@ -830,6 +887,7 @@ class ObservationFusionNode:
             self.pending_cov = covariance
             self.pending_pred_header = copy.deepcopy(message.header)
             self.pending_bottle_id = int(message.bottle_id)
+            self.pending_prior_sources = sources
             self._try_start_locked()
 
     def _pred_cb(self, message: PoseStamped) -> None:
@@ -899,11 +957,16 @@ class ObservationFusionNode:
         self.prior_header = self.pending_pred_header
         # Finalizing the previous operation above still uses its previous ID.
         self.bottle_id = self.pending_bottle_id
+        self.prior_sources = {
+            name: (position.copy(), covariance.copy())
+            for name, (position, covariance) in self.pending_prior_sources.items()
+        }
 
         self.pending_pred = None
         self.pending_cov = None
         self.pending_pred_header = None
         self.pending_bottle_id = None
+        self.pending_prior_sources = {}
 
         self.yolo_received = False
         self.meta_received = False
@@ -1157,7 +1220,7 @@ class ObservationFusionNode:
                 self._finalize_locked("timeout")
 
     # ====================================================================
-    # Candidate selection and prior discrepancy diagnostics
+    # Candidate selection, prior-distance rejection, and diagnostics
     # ====================================================================
 
     @staticmethod
@@ -1364,6 +1427,7 @@ class ObservationFusionNode:
             covariances = candidate_covariances
 
         distances = np.full(candidates.shape[0], np.inf, dtype=float)
+        support_distances = np.full(candidates.shape[0], np.inf, dtype=float)
 
         for index, candidate in enumerate(candidates):
             candidate_covariance = self._stable_covariance(
@@ -1376,77 +1440,125 @@ class ObservationFusionNode:
                     self.operation_id, sensor, index, max_std,
                 )
                 continue
-            innovation_covariance = self._regularize(
-                self.prior_cov + candidate_covariance
-            )
-            residual = candidate - self.prior
-            distances[index] = self._mahalanobis_squared(
-                residual,
-                innovation_covariance,
-            )
+            references = self._reference_distances(candidate, candidate_covariance)
+            distances[index] = references["prior"]
+            support_distances[index] = min(references.values())
 
-        scores = np.exp(-0.5 * distances)
-        if not np.any(np.isfinite(distances)):
+        ranking_distances = np.where(
+            distances <= gate_threshold, distances, support_distances
+        )
+        scores = np.exp(-0.5 * ranking_distances)
+        eligible = np.isfinite(support_distances) & (support_distances <= gate_threshold)
+        scores[~eligible] = 0.0
+        if not np.any(eligible):
+            rospy.logwarn(
+                "Operation %d: no %s candidates within any reference candidate "
+                "gate (threshold=%.3f)",
+                self.operation_id, sensor, gate_threshold,
+            )
             return None, None, False, np.nan, -1, distances, scores
 
-        best_overall_index = int(np.argmin(distances))
-        best_overall_distance = float(
-            distances[best_overall_index]
-        )
-        if best_overall_distance > gate_threshold:
-            rospy.logwarn(
-                "Operation %d: all candidates differ from the MR prior "
-                "(minimum d2=%.3f, threshold=%.3f); "
-                "the observation remains eligible",
-                self.operation_id,
-                best_overall_distance,
-                gate_threshold,
-            )
-
-        # A large distance can mean that MR prediction violated a physical
-        # constraint. It must not invalidate a finite sensor measurement.
-        selected_index = best_overall_index
+        # Keep the original prior as the first choice. Only use a source
+        # hypothesis when no candidate passes the fused-prior gate.
+        preferred = eligible & (distances <= gate_threshold)
+        selectable = preferred if np.any(preferred) else eligible
+        selected_index = int(np.argmin(np.where(selectable, ranking_distances, np.inf)))
 
         selected_covariance = self._regularize(
             covariances[selected_index]
+        )
+        references = self._reference_distances(candidates[selected_index], selected_covariance)
+        rospy.loginfo(
+            "Operation %d: %s candidate %d reference d2=%s closest=%s source_rescue=%s",
+            self.operation_id, sensor, selected_index, references,
+            min(references, key=references.get),
+            distances[selected_index] > gate_threshold,
         )
 
         return (
             candidates[selected_index].copy(),
             selected_covariance,
             True,
-            best_overall_distance,
+            float(distances[selected_index]),
             selected_index,
             distances,
             scores,
         )
 
+    def _reference_distances(self, position, covariance):
+        """Distances to the fused prior and its same-operation source hypotheses."""
+        references = {"prior": (self.prior, self.prior_cov)}
+        references.update(self.prior_sources)
+        return {
+            name: self._mahalanobis_squared(
+                position - mean, self._regularize(prior_covariance + covariance)
+            )
+            for name, (mean, prior_covariance) in references.items()
+        }
+
+    def _support_distances(self, candidates, covariances, prior_distances):
+        return np.array([
+            min(self._reference_distances(position, covariance).values())
+            if np.isfinite(prior_distance) else np.inf
+            for position, covariance, prior_distance in zip(
+                candidates, covariances, prior_distances
+            )
+        ])
+
     def _best_consistent_pair(
         self,
+        yolo_distances: np.ndarray,
+        meta_distances: np.ndarray,
     ) -> Optional[Tuple[int, int, float]]:
-        """Find the most mutually consistent YOLO/Meta candidate pair."""
+        """Prefer prior-supported pairs, then the closest supported rescue pair."""
         best = None
+        best_key = None
+        yolo_support = self._support_distances(
+            self.yolo_candidates, self.yolo_covariances, yolo_distances
+        )
+        meta_support = self._support_distances(
+            self.meta_candidates, self.meta_covariances, meta_distances
+        )
         meta_covariances = [
             self._stable_covariance(covariance, self.max_std_meta)
             for covariance in self.meta_covariances
         ]
         for yi, yolo in enumerate(self.yolo_candidates):
+            if (
+                not np.isfinite(yolo_support[yi])
+                or yolo_support[yi] > self.candidate_gate_yolo
+            ):
+                continue
             yolo_cov = self._stable_covariance(
                 self.yolo_covariances[yi], self.max_std_yolo
             )
             if yolo_cov is None:
                 continue
             for mi, meta in enumerate(self.meta_candidates):
+                if (
+                    not np.isfinite(meta_support[mi])
+                    or meta_support[mi] > self.candidate_gate_meta
+                ):
+                    continue
                 meta_cov = meta_covariances[mi]
                 if meta_cov is None:
                     continue
                 covariance = self._regularize(yolo_cov + meta_cov)
                 d2 = self._mahalanobis_squared(yolo - meta, covariance)
-                if np.isfinite(d2) and (best is None or d2 < best[2]):
+                if not np.isfinite(d2) or d2 > self.gate_yolo_meta:
+                    continue
+                yolo_rescued = yolo_distances[yi] > self.candidate_gate_yolo
+                meta_rescued = meta_distances[mi] > self.candidate_gate_meta
+                key = (
+                    int(yolo_rescued) + int(meta_rescued),
+                    float((yolo_support[yi] if yolo_rescued else yolo_distances[yi])
+                          + (meta_support[mi] if meta_rescued else meta_distances[mi])),
+                    d2,
+                )
+                if best_key is None or key < best_key:
                     best = (yi, mi, d2)
-        if best is not None and best[2] <= self.gate_yolo_meta:
-            return best
-        return None
+                    best_key = key
+        return best
 
     # ====================================================================
     # CI fusion
@@ -1609,7 +1721,7 @@ class ObservationFusionNode:
                 candidates_list=self.yolo_candidates,
                 candidate_covariances=self.yolo_covariances,
                 observation_covariance=self.cov_yolo,
-                gate_threshold=self.gate_yolo,
+                gate_threshold=self.candidate_gate_yolo,
                 max_std=self.max_std_yolo,
                 sensor="YOLO",
             )
@@ -1626,7 +1738,7 @@ class ObservationFusionNode:
                 candidates_list=self.meta_candidates,
                 candidate_covariances=self.meta_covariances,
                 observation_covariance=self.cov_meta,
-                gate_threshold=self.gate_meta,
+                gate_threshold=self.candidate_gate_meta,
                 max_std=self.max_std_meta,
                 sensor="Meta",
             )
@@ -1636,7 +1748,7 @@ class ObservationFusionNode:
             status = "prior_only"
 
             pair = (
-                self._best_consistent_pair()
+                self._best_consistent_pair(yolo_distances, meta_distances)
                 if yolo_valid and meta_valid
                 else None
             )
@@ -1941,6 +2053,17 @@ class ObservationFusionNode:
             float(d2_pair),
         ]
         self.distance_pub.publish(distances)
+        reference_values = []
+        for candidates, covariances, index in (
+            (self.yolo_candidates, self.yolo_covariances, yolo_index),
+            (self.meta_candidates, self.meta_covariances, meta_index),
+        ):
+            references = (
+                self._reference_distances(candidates[index], covariances[index])
+                if index >= 0 else {}
+            )
+            reference_values.extend(references.get(name, np.nan) for name in ("prior", "current", "tf"))
+        self.reference_distances_pub.publish(self._vector_message(np.array(reference_values)))
 
         self.yolo_distances_pub.publish(
             self._vector_message(yolo_distances)
@@ -1999,6 +2122,7 @@ class ObservationFusionNode:
         self.prior = None
         self.prior_cov = None
         self.prior_header = None
+        self.prior_sources = {}
         self.yolo_received = False
         self.meta_received = False
         self.yolo_candidates = []

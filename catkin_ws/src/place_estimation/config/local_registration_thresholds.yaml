@@ -9,10 +9,20 @@ max_std_meta: 0.10
 
 # Squared Mahalanobis-distance gates (3 DoF chi-square 95% defaults)
 # gate_yolo / gate_meta decide whether the prior participates in CI.
-# A measurement outside the gate remains eligible as a physical observation.
+# Measurements outside these gates may still be used within candidate gates.
 gate_yolo: 7.815
 gate_meta: 7.815
 gate_yolo_meta: 7.815
+
+# Hard reference-distance limits, including mutually agreeing pairs.
+# With use_prior_source_guard, a candidate can also pass against the
+# same-operation, bias-corrected Current or TF source covariance.
+# Squared Mahalanobis distance; provisional defaults, not distances in metres.
+# Each must be >= the corresponding CI participation gate above.
+candidate_gate_yolo: 25.0
+candidate_gate_meta: 25.0
+# Among consistent pairs, prefer fewer source rescues, then smaller reference
+# distance sums; break ties by the YOLO-Meta distance.
 
 # Relative/absolute tolerance used when conflicting sensors have similar
 # covariance traces. If equivalent, neither sensor is preferred and the

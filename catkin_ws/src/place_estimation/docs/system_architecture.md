@@ -211,11 +211,12 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    START["安定なYOLO / Meta候補"] --> COUNT{"有効センサ数"}
+    START["安定なYOLO / Meta候補"] --> GATE["事前・Current・TFのすべてから遠い候補を除外"]
+    GATE --> COUNT{"有効センサ数"}
     COUNT -->|"0"| PRIOR["事前分布を採用"]
     COUNT -->|"1"| ONE["有効な1観測を採用"]
     COUNT -->|"2"| PAIR{"YOLOとMetaは整合?"}
-    PAIR -->|"Yes"| BOTH["両観測をCI融合"]
+    PAIR -->|"Yes"| BOTH["事前に近い組を優先し、元入力による救済組も含めて選択・CI融合"]
     PAIR -->|"No"| UNC{"共分散traceに差がある?"}
     UNC -->|"Yes"| BEST["traceが小さい観測を採用"]
     UNC -->|"No"| PRIOR
@@ -228,8 +229,27 @@ flowchart TD
     NEAR -->|"No"| OBS["物理観測のみでCI"]
 ```
 
-`gate_yolo`と`gate_meta`は、観測を捨てるための閾値ではありません。
-事前分布を最終CIへ含めるかどうかを決定します。
+`candidate_gate_yolo`と`candidate_gate_meta`は参照分布から離れすぎた候補を
+棄却する閾値です。距離は`(z - mu)^T (Sigma + R)^-1 (z - mu)`
+で計算するマハラノビス距離の二乗で、暫定値は両センサとも`25.0`です。
+既定では事前分布・Current・TFのいずれかが閾値内なら候補として残します。
+すべての参照から遠い候補は、観測同士が完全に一致していても採用しません。
+有効な候補が残らなければ事前分布へ戻り、物理観測の学習フィードバックも送りません。
+
+残った候補のうち、YOLO–Meta間距離が`gate_yolo_meta`以下の組を整合するとみなし、
+事前分布だけでは閾値を通らず元入力で救済された候補の数が少ない組を優先します。
+次に参照への距離の合計、最後にYOLO–Meta間距離が小さい組を選びます。
+事前に近い候補の距離は事前との距離、救済候補はCurrent/TFの最小距離を使います。
+
+事前ノードは`/P_pred_context`に、操作ID・ボトルID・事前分布・元のCurrent/TF位置・
+バイアス補正後の両位置と共分散をまとめて配信します。融合側はこのメッセージだけを
+受け取るため、別試行の入力を対応付けることはありません。
+`publish_prior_context`と`use_prior_source_guard`は既定Configで有効です。
+元入力による救済は候補選択に使い、事前を最終CIへ含める条件は従来どおりです。
+
+`gate_yolo`と`gate_meta`は事前分布を最終CIへ含めるかを決定する、より狭い閾値です。
+この閾値を超えても候補棄却閾値以内なら、物理観測だけの融合は可能です。
+候補棄却閾値はそれぞれ対応するCI閾値以上に設定します。
 
 ## 7. 主なROSトピック
 
@@ -240,6 +260,7 @@ flowchart TD
 | `/P_current` | `Float32MultiArray` | MR側 | 事前分布 | `[metadata, x, y, z]` |
 | `/P_tf` | `PoseStamped` | ロボット運動学側 | 事前分布 | EEから換算したボトル中心 |
 | `/P_pred` | `PoseStamped` | 事前分布 | 融合、可視化、KL | 事前平均位置 |
+| `/P_pred_context` | `PriorContext` | 事前分布 | 融合・解析 | 操作ごとの事前分布と元入力仮説 |
 | `/Sigma_pred` | `Float32MultiArray` | 事前分布 | 融合、可視化、KL | 事前3x3共分散 |
 | `/P_yolo` | `Float32MultiArray` | YOLO/RealSense側 | 融合 | 現設定では候補ごとにXYZ＋3x3共分散 |
 | `/P_meta` | `Float32MultiArray` | Meta側 | 融合 | 現設定では1メッセージを1フレームとして扱うXYZ＋3x3共分散候補 |
@@ -336,7 +357,7 @@ flowchart TD
 | 観測後CIの方式 | `observation_ci_weight_mode` |
 | CI探索刻み・目的関数 | `observation_ci_weight_step`、`observation_ci_objective` |
 
-現在はYOLOが`packed`かつ共分散付き、MetaがXYZの`stream`です。
+現在はYOLOが`packed`、Metaが`stream`で、どちらも共分散付きです。
 
 ### 8.3 実験で決定する閾値
 
@@ -346,6 +367,7 @@ flowchart TD
 |---|---|
 | 観測共分散の最大主軸標準偏差 | `max_std_yolo`、`max_std_meta` |
 | 事前をCIに含める距離 | `gate_yolo`、`gate_meta` |
+| すべての参照から遠すぎる候補を棄却する距離 | `candidate_gate_yolo`、`candidate_gate_meta` |
 | YOLO–Meta整合閾値 | `gate_yolo_meta` |
 | 競合時に不確かさを同等とみなす範囲 | `uncertainty_trace_relative_tolerance`、`uncertainty_trace_absolute_tolerance` |
 | 観測窓の長さ | `observation_timeout` |

@@ -23,6 +23,8 @@ class Collector:
         self.markers = []
         self.kl_metrics = []
         self.kl_summaries = []
+        self.learning_updates = []
+        self.reference_distances = []
 
     def append(self, target, message):
         with self.condition:
@@ -66,10 +68,10 @@ def yolo_record(position, standard_deviation=0.02):
     )
 
 
-def publish_observation_window(yolo_pub, meta_pub):
-    yolo_pub.publish(yolo_record([1.0, 0.0, 0.0]))
-    for x in (0.99, 1.0, 1.01):
-        meta_pub.publish(Float32MultiArray(data=[x, 0.0, 0.0]))
+def publish_observation_window(yolo_pub, meta_pub, center=1.0):
+    yolo_pub.publish(yolo_record([center, 0.0, 0.0]))
+    for x in (center - .01, center, center + .01):
+        meta_pub.publish(yolo_record([x, 0.0, 0.0]))
         rospy.sleep(0.08)
 
 
@@ -120,6 +122,16 @@ def main():
     rospy.Subscriber(
         "/kl_adaptation_summary", String,
         lambda msg: collector.append(collector.kl_summaries, msg),
+        queue_size=10,
+    )
+    rospy.Subscriber(
+        "/learned_bias_current", Float64MultiArray,
+        lambda msg: collector.append(collector.learning_updates, msg),
+        queue_size=10,
+    )
+    rospy.Subscriber(
+        "/observation_reference_distances", Float32MultiArray,
+        lambda msg: collector.append(collector.reference_distances, msg),
         queue_size=10,
     )
 
@@ -216,9 +228,14 @@ def main():
         "second KL evaluation",
     )
     assert collector.statuses[1].data == "prior_yolo_meta_fused"
+    collector.wait_for(
+        lambda: len(collector.used_observations) >= 2,
+        1.0,
+        "second physical observation",
+    )
 
-    # Trial 3: a stable physical observation far from the prior remains valid;
-    # because no Meta observation arrives, the output must be YOLO-only.
+    # Trial 3: even perfectly agreeing, stable observations must be rejected
+    # when too far from the prior. They must not update operation-error learning.
     rospy.sleep(0.3)
     current_pub.publish(Float32MultiArray(data=[3.0, 1.1, 0.0, 0.0]))
     tf_pub.publish(pose([0.9, 0.0, 0.0]))
@@ -232,6 +249,9 @@ def main():
     )
     rospy.sleep(0.1)
     yolo_pub.publish(yolo_record([2.0, 0.0, 0.0]))
+    for _ in range(3):
+        meta_pub.publish(yolo_record([2.0, 0.0, 0.0]))
+        rospy.sleep(0.08)
     collector.wait_for(
         lambda: len(collector.statuses) >= 3, 6.0, "far-observation result"
     )
@@ -248,13 +268,53 @@ def main():
         1.0,
         "KL adaptation summary",
     )
-    assert collector.statuses[2].data == "yolo_only"
-    assert abs(collector.places[2].pose.position.x - 2.0) < 1.0e-6
+    assert collector.statuses[2].data == "no_valid_observation"
+    assert abs(collector.places[2].pose.position.x - collector.predictions[2].pose.position.x) < 1.0e-6
+    assert len(collector.used_observations) == 2
     final_summary = json.loads(collector.kl_summaries[-1].data)
     assert final_summary["sample_count"] == 3
     assert final_summary["latest_operation_id"] == 3
     assert final_summary["adaptation_state"] == "insufficient_data"
     assert final_summary["kl_trend"]["latest"] >= 0.0
+
+    # Trial 4: feedback publication #3 belongs to Place operation #4.
+    # A rejected operation must not shift subsequent learning associations.
+    current_pub.publish(Float32MultiArray(data=[4.0, 1.2, 0.0, 0.0]))
+    tf_pub.publish(pose([1.0, 0.0, 0.0]))
+    collector.wait_for(lambda: len(collector.predictions) >= 4, 3.0, "fourth prior")
+    rospy.sleep(0.1)
+    publish_observation_window(yolo_pub, meta_pub, center=1.1)
+    collector.wait_for(lambda: len(collector.learning_updates) >= 3,
+                       6.0, "learning after skipped feedback")
+    collector.wait_for(lambda: len(collector.kl_summaries) >= 4,
+                       1.0, "fourth KL evaluation")
+    collector.wait_for(lambda: len(collector.used_observations) >= 3,
+                       1.0, "third physical feedback")
+    assert collector.used_observations[2].header.seq == 3
+    assert collector.used_observations[2].header.stamp == collector.predictions[3].header.stamp
+    np.testing.assert_allclose(collector.learning_updates[2].data,
+                               [4., 3., .1, 0., 0.], atol=1.e-6)
+
+    # Trial 5: the arm/TF is high while Current and physical observations stay
+    # at the placed bottle. The source guard must rescue both observations.
+    current_pub.publish(Float32MultiArray(data=[5.0, 1.2, 0.0, 0.0]))
+    tf_pub.publish(pose([1.0, 0.0, .4]))
+    collector.wait_for(lambda: len(collector.predictions) >= 5, 3.0, "fifth prior")
+    assert collector.predictions[4].pose.position.z > .1
+    rospy.sleep(0.1)
+    publish_observation_window(yolo_pub, meta_pub, center=1.1)
+    collector.wait_for(lambda: len(collector.learning_updates) >= 4,
+                       6.0, "source-rescued learning")
+    collector.wait_for(lambda: len(collector.places) >= 5 and len(collector.statuses) >= 5,
+                       1.0, "source-rescued result")
+    collector.wait_for(lambda: len(collector.reference_distances) >= 5,
+                       1.0, "source reference diagnostics")
+    assert collector.statuses[4].data == 'yolo_meta_fused'
+    assert abs(collector.places[4].pose.position.z) < 1.e-6
+    assert collector.learning_updates[3].data[0] == 5.
+    refs = collector.reference_distances[4].data
+    assert refs[0] > 25. and refs[1] <= 25.  # YOLO: far prior, near Current.
+    assert refs[3] > 25. and refs[4] <= 25.  # Meta: far prior, near Current.
 
     print(
         "ROS pipeline smoke test passed: "
@@ -264,7 +324,8 @@ def main():
         f"first_kl={first_kl[1]:.6f}, "
         f"trend_state={final_summary['adaptation_state']}, "
         f"near_status={collector.statuses[0].data}, "
-        f"far_status={collector.statuses[2].data}"
+        f"far_status={collector.statuses[2].data}, "
+        f"source_rescue_status={collector.statuses[4].data}"
     )
 
 

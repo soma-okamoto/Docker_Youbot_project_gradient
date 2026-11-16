@@ -48,6 +48,16 @@ class BottleDistribution:
         self.covariance = [0.] * 9
 
 
+class PriorContext(BottleDistribution):
+    def __init__(self):
+        super().__init__()
+        self.operation_id = 0
+        for name in ('raw_current', 'raw_tf', 'current', 'tf'):
+            setattr(self, name + '_position', NS(x=0., y=0., z=0.))
+        self.current_covariance = [0.] * 9
+        self.tf_covariance = [0.] * 9
+
+
 class BottleIdentityTests(unittest.TestCase):
     def setUp(self):
         self.settings = {'~enable_bottle_id': True, '~expected_frame': 'base_footprint',
@@ -68,6 +78,7 @@ class BottleIdentityTests(unittest.TestCase):
         std.Float32MultiArray = std.Float64MultiArray = Array
         std.MultiArrayDimension = std.Int32 = std.String = NS
         custom.BottleDistribution = BottleDistribution
+        custom.PriorContext = PriorContext
         self.modules = patch.dict(sys.modules, {
             'rospy': self.ros, 'geometry_msgs': ModuleType('geometry_msgs'),
             'geometry_msgs.msg': geometry, 'std_msgs': ModuleType('std_msgs'),
@@ -169,6 +180,69 @@ class BottleIdentityTests(unittest.TestCase):
             self.fusion._pred_with_id_cb(invalid)
         self.assertEqual(self.fusion.bottle_id, 7)
         self.assertEqual(self.results(), [])
+
+    def guarded_prior(self, bottle, current_x, tf_x):
+        current = Array([bottle, current_x, 0., 0.])
+        tf = PoseStamped()
+        tf.header.frame_id = 'base_footprint'
+        tf.header.stamp = Time(bottle + 100)
+        tf.pose.position.x = tf_x
+        self.prior._current_callback(current)
+        self.prior._tf_callback(tf)
+        return self.prior.prior_context_pub.publish.call_args.args[0]
+
+    def enable_guard(self):
+        self.settings.update({'~publish_prior_context': True, '~use_prior_source_guard': True,
+                              '~enable_yolo': True, '~ci_weight_mode': 'optimize'})
+        self.prior = self.load('prior_distribution_node').PriorDistributionNode()
+        self.fusion = self.load('observation_fusion_node_new').ObservationFusionNode()
+
+    def test_atomic_context_retains_sources_and_rescues_current_observation(self):
+        self.enable_guard()
+        self.prior.bias_current = np.array([.1, 0., 0.])
+        context = self.guarded_prior(7, 1.1, 2.)
+        self.assertEqual(context.raw_current_position.x, 1.1)
+        self.assertEqual(context.raw_tf_position.x, 2.)
+        self.assertEqual(context.current_position.x, 1.)
+        self.assertEqual(context.position.x, 2.)
+        self.assertEqual(context.operation_id, 1)
+        self.fusion._pred_context_cb(context)
+        self.fusion._yolo_array_cb(Array([1.01, 0., 0.] + (np.eye(3)*.0004).reshape(-1).tolist()))
+        self.assertEqual(self.results()[0].bottle_id, 7)
+        self.assertAlmostEqual(self.results()[0].position.x, 1.01)
+        self.assertEqual(self.fusion.prior_sources, {})
+
+    def test_context_mode_subscribes_only_to_atomic_context(self):
+        self.enable_guard()
+        self.assertIsNotNone(self.fusion.prior_context_sub)
+        self.assertIsNone(self.fusion.pred_with_id_sub)
+        self.assertIsNone(self.fusion.pred_sub)
+        self.assertIsNone(self.fusion.pred_cov_sub)
+
+    def test_new_context_does_not_reuse_previous_sources(self):
+        self.enable_guard()
+        self.fusion._pred_context_cb(self.guarded_prior(7, 1., 2.))
+        self.fusion._pred_context_cb(self.guarded_prior(12, 3., 4.))
+        self.assertEqual(self.results()[0].bottle_id, 7)
+        np.testing.assert_allclose(self.fusion.prior_sources['current'][0], [3., 0., 0.])
+        self.fusion._yolo_array_cb(Array([1., 0., 0.] + (np.eye(3)*.0004).reshape(-1).tolist()))
+        # Observation near the previous Current must be rejected for this operation.
+        self.assertEqual(self.results()[1].bottle_id, 12)
+        self.assertAlmostEqual(self.results()[1].position.x, 4.)
+
+    def test_invalid_context_does_not_replace_active_sources(self):
+        import copy
+        self.enable_guard()
+        context = self.guarded_prior(7, 1., 2.)
+        self.fusion._pred_context_cb(context)
+        for field, value in (('current_covariance', [float('nan')] * 9),
+                             ('tf_covariance', [-1.] * 9), ('operation_id', 0)):
+            invalid = copy.deepcopy(context)
+            setattr(invalid, field, value)
+            self.fusion._pred_context_cb(invalid)
+            self.assertEqual(self.fusion.bottle_id, 7)
+            np.testing.assert_allclose(self.fusion.prior_sources['current'][0], [1., 0., 0.])
+            self.assertEqual(self.results(), [])
 
 
 if __name__ == '__main__':

@@ -23,6 +23,19 @@ source /opt/ros/noetic/setup.bash
 export ROS_IP=192.168.1.23
 export ROS_MASTER_URI=http://192.168.1.23:11311
 PYTHONNOUSERSITE=1 roslaunch rosbridge_server rosbridge_websocket.launch
+
+
+source /opt/ros/noetic/setup.bash
+
+PLACE_WS=/home/dars/Docker_ws/Docker_Youbot_project_gradient/catkin_ws
+
+export ROS_PACKAGE_PATH="$PLACE_WS/src:$ROS_PACKAGE_PATH"
+export PYTHONPATH="$PLACE_WS/devel/.private/place_estimation/lib/python3/dist-packages:$PYTHONPATH"
+
+PYTHONNOUSERSITE=1 roslaunch rosbridge_server rosbridge_websocket.launch
+
+
+
 ####################################################################################
 
 sudo ip route replace 192.168.32.0/20 via 192.168.1.10
@@ -163,19 +176,21 @@ rosrun esaki_youbot_project_gradient move_base_global_registration.py
 rosrun esaki_youbot_project_gradient afine_transformation.py
 
 
-#####rezistration
+#####基本の局所適応レジストレーション
 roslaunch place_estimation place_estimation_pipeline.launch
 
 
-#予備実験用のデータ収集・解析機能
+#予備実験用のデータ収集・解析機能付き局所適応レジストレーション
+SAVE_DIR="$(rospack find place_estimation)/DataSaved"
+
 roslaunch place_estimation preliminary_experiment.launch \
-  output_bag:=/保存先/preliminary_01
+  output_bag:="$SAVE_DIR/preliminary_04"
 
 #Recording to '...bag'が表示されてから実験を開始してください。
 #実験終了後：
 rosrun place_estimation preliminary_experiment_analyzer.py \
-  /保存先/preliminary_01.bag \
-  /保存先/preliminary_01_analysis \
+  "$SAVE_DIR/preliminary_04.bag" \
+  "$SAVE_DIR/preliminary_04_analysis" \
   --meta-stride 12
 
 ########
@@ -204,30 +219,40 @@ sudo -E env \
   ROS_IP=192.168.1.23 \
   ./run_gtx1650.sh
 
+#betu notabu de zikkou
+sudo docker exec -it \
+  -e ROS_MASTER_URI=http://192.168.1.23:11311 \
+  -e ROS_IP=192.168.1.23 \
+  yolov5_strongsort_gtx1650 bash
+
 source /opt/ros/noetic/setup.bash
 source /home/dars/catkin_ws/devel/setup.bash
 cd /home/dars/catkin_ws/src/Realsense_yolov5_Deepsort/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
 
-rosrun Yolov5_StrongSORT track_save_cpu.py --device 0
-rosrun Yolov5_StrongSORT track_save_cpu_fixed.py --device 0
-
-###ato kara zikkou
-rosrun Yolov5_StrongSORT track_P_yolo.py --device 0
 
 rosrun Yolov5_StrongSORT track_P_meta.py
-rosrun Yolov5_StrongSORT track_P_meta_before_qr.py
+# rosrun Yolov5_StrongSORT track_P_meta_before_qr.py
+
+rosrun Yolov5_StrongSORT QRPostion_test.py 
+
+rosrun Yolov5_StrongSORT track_save_cpu.py --device 0
+# rosrun Yolov5_StrongSORT track_save_cpu_fixed.py --device 0
+
+###track no ato kara zikkou
+rosrun Yolov5_StrongSORT track_P_yolo.py --device 0
 
 
-rosrun Yolov5_StrongSORT track_save_gpu.py --device 0 \
-  view_img
+
+# rosrun Yolov5_StrongSORT track_save_gpu.py --device 0 \
+#   view_img
 
 # rosrun Yolov5_StrongSORT track.py --device cpu
 
 ＃これarm2のcommandないとエラーはく
  
-rosrun Yolov5_StrongSORT track_save_cpu.py 
+# rosrun Yolov5_StrongSORT track_save_cpu.py 
 
-rosrun Yolov5_StrongSORT QRPostion_test.py 
+
 
 # conda activate yolo_env
 # export ROS_MASTER_URI=http://192.168.11.14:11311

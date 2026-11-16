@@ -31,6 +31,7 @@ Output
 """
 
 import threading
+import copy
 from typing import Optional, Tuple
 
 import numpy as np
@@ -55,6 +56,8 @@ class PriorDistributionNode:
         self.cov_topic = rospy.get_param("~cov_topic", "/Sigma_pred")
         self.enable_bottle_id = bool(rospy.get_param("~enable_bottle_id", False))
         self.pred_with_id_topic = rospy.get_param("~pred_with_id_topic", "/P_pred_with_id")
+        self.publish_prior_context = bool(rospy.get_param("~publish_prior_context", False))
+        self.prior_context_topic = rospy.get_param("~prior_context_topic", "/P_pred_context")
         self.used_observation_topic = rospy.get_param(
             "~used_observation_topic", "/used_physical_observation"
         )
@@ -148,6 +151,7 @@ class PriorDistributionNode:
         self.error_m2_tf = np.zeros((3, 3), dtype=np.float64)
         self.sum_used_covariance = np.zeros((3, 3), dtype=np.float64)
         self.pending_learning_samples = {}
+        self.pending_learning_stamps = {}
 
         # 1操作分の受信待ちデータ
         self.pending_current: Optional[np.ndarray] = None
@@ -163,6 +167,12 @@ class PriorDistributionNode:
             self.cov_topic, Float32MultiArray, queue_size=10
         )
         self.pred_with_id_pub = None
+        self.prior_context_pub = None
+        if self.publish_prior_context:
+            from place_estimation.msg import PriorContext
+            self.prior_context_pub = rospy.Publisher(
+                self.prior_context_topic, PriorContext, queue_size=10
+            )
         if self.enable_bottle_id:
             from place_estimation.msg import BottleDistribution
             self.pred_with_id_pub = rospy.Publisher(
@@ -455,6 +465,7 @@ class PriorDistributionNode:
             ):
                 oldest = min(self.pending_learning_samples)
                 del self.pending_learning_samples[oldest]
+                self.pending_learning_stamps.pop(oldest, None)
 
         # e = P_source - P_ref と定義するため、
         # バイアス補正では推定位置からbiasを引く。
@@ -497,6 +508,7 @@ class PriorDistributionNode:
             stamp,
             operation_id,
             bottle_id,
+            sources=(raw_current, raw_tf, corrected_current, corrected_tf),
         )
 
         rospy.loginfo(
@@ -557,7 +569,6 @@ class PriorDistributionNode:
             )
             return
 
-        operation_id = int(message.header.seq)
         position = self._pose_position(message.pose)
         if not self._is_valid_position(position):
             rospy.logerr_throttle(2.0, "Used observation contains NaN or Inf")
@@ -575,7 +586,28 @@ class PriorDistributionNode:
             return
 
         with self.lock:
+            # rospy overwrites Header.seq with this publisher's message count.
+            # Feedback is sparse, so its seq cannot identify a Place operation.
+            # Fusion echoes the prior's timestamp; match it to exactly one
+            # pending operation and fail closed on missing/ambiguous stamps.
+            feedback_stamp = getattr(message.header, "stamp", None)
+            matches = [
+                operation_id
+                for operation_id, stamp in self.pending_learning_stamps.items()
+                if stamp == feedback_stamp
+                and operation_id in self.pending_learning_samples
+            ]
+            if len(matches) != 1:
+                rospy.logwarn_throttle(
+                    2.0,
+                    "No unique operation sample for used observation stamp=%s "
+                    "(publisher seq=%d)",
+                    feedback_stamp, message.header.seq,
+                )
+                return
+            operation_id = matches[0]
             sample = self.pending_learning_samples.pop(operation_id, None)
+            self.pending_learning_stamps.pop(operation_id, None)
             if sample is None:
                 rospy.logwarn_throttle(
                     2.0,
@@ -779,11 +811,14 @@ class PriorDistributionNode:
         stamp,
         operation_id: int,
         bottle_id: Optional[int] = None,
+        sources=None,
     ) -> None:
         pred_message = PoseStamped()
         pred_message.header.seq = operation_id
         pred_message.header.frame_id = frame_id
         pred_message.header.stamp = stamp
+        if operation_id in self.pending_learning_samples:
+            self.pending_learning_stamps[operation_id] = copy.deepcopy(stamp)
 
         pred_message.pose.position.x = float(
             position[0]
@@ -834,6 +869,23 @@ class PriorDistributionNode:
             identified.position = pred_message.pose.position
             identified.covariance = covariance.reshape(-1).tolist()
             self.pred_with_id_pub.publish(identified)
+        if self.prior_context_pub is not None and sources is not None:
+            from place_estimation.msg import PriorContext
+            context = PriorContext()
+            context.header = copy.deepcopy(pred_message.header)
+            context.operation_id = operation_id
+            context.bottle_id = -1 if bottle_id is None else bottle_id
+            context.position = copy.deepcopy(pred_message.pose.position)
+            context.covariance = covariance.reshape(-1).tolist()
+            for field, values in zip(
+                ("raw_current_position", "raw_tf_position", "current_position", "tf_position"),
+                sources,
+            ):
+                point = getattr(context, field)
+                point.x, point.y, point.z = map(float, values)
+            context.current_covariance = self.cov_current.reshape(-1).tolist()
+            context.tf_covariance = self.cov_tf.reshape(-1).tolist()
+            self.prior_context_pub.publish(context)
 
 
 def main() -> None:

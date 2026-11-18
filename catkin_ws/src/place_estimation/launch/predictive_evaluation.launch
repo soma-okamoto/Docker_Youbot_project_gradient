@@ -1,0 +1,9 @@
+<launch>
+  <node pkg="place_estimation"
+        type="predictive_evaluation_node.py"
+        name="predictive_evaluation_node"
+        output="screen">
+    <rosparam command="load"
+              file="$(find place_estimation)/config/predictive_evaluation.yaml" />
+  </node>
+</launch>

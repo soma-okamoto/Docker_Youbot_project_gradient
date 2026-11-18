@@ -1,0 +1,11 @@
+input_topic: /predictive_evaluation_input
+metrics_topic: /predictive_evaluation
+summary_topic: /predictive_evaluation_summary
+expected_frame: base_footprint
+min_variance: 1.0e-8
+summary_window_size: 10
+max_completed_operations: 1000
+# NLL uses Sigma_prior + R_sensor as a declared Gaussian approximation.
+# Identity and prior/measurement error independence remain unverified.
+# Trial summaries require exactly one quality candidate before prior gates;
+# multiple candidates are retained, and selected scores are diagnostics only.

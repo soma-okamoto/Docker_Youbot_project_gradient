@@ -54,6 +54,25 @@ mode; it does not separately pair `/P_current`, `/P_tf`, or legacy prior topics.
 Malformed context is rejected as a whole. Sources are cleared at finalization.
 With the guard disabled, the previous prior input paths remain available.
 
+The context also carries `learning_sample_count` at prior generation, the actual
+Current CI weight, and a fixed-reference position/covariance/CI weight with
+`fixed_prior_available`. The fixed reference uses immutable startup error
+parameters and the same raw inputs and CI rule. These fields are evaluation data;
+fusion still uses `position`/`covariance` and the existing source hypotheses.
+Rebuild all message consumers after this schema change.
+
+### Predictive evaluation snapshots
+
+`/predictive_evaluation_input`, `/predictive_evaluation` and
+`/predictive_evaluation_summary` use `std_msgs/String` JSON, schema version 1.
+The input is an atomic operation-level snapshot combining frozen priors and
+quality-valid sensor representatives before prior-distance rejection. Its
+explicit `operation_id` comes from `PriorContext`, not a publisher's Header.seq.
+The result retains this data and adds per-sensor paired scores. Missing scores
+are JSON null; NaN and infinity are not emitted. See
+[evaluation/README.md](../evaluation/README.md) for selection rules, assumptions,
+outputs, and build instructions.
+
 ### `/P_yolo` (`std_msgs/Float32MultiArray`)
 
 The configured packed record is:

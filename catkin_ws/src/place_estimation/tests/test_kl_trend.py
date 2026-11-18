@@ -34,6 +34,8 @@ class KLTrendTests(unittest.TestCase):
         self.assertEqual(summary["sample_count"], 2)
         self.assertEqual(summary["latest"]["kl_prior_to_posterior"], 2.0)
         self.assertNotIn("kl_posterior_to_prior", summary["latest"])
+        self.assertFalse(summary["adaptation_claim_supported"])
+        self.assertEqual(summary["interpretation"], "prior_posterior_disagreement_only")
 
     def test_decreasing_sequence_is_adapting(self):
         summary = kl_trend.evaluate_adaptation_history(

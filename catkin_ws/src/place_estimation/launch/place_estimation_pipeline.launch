@@ -13,4 +13,5 @@
 
   <include file="$(find place_estimation)/launch/distribution_visualization.launch" />
   <include file="$(find place_estimation)/launch/kl_evaluation.launch" />
+  <include file="$(find place_estimation)/launch/predictive_evaluation.launch" />
 </launch>

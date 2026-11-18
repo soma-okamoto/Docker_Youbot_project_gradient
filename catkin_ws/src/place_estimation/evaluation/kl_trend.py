@@ -148,6 +148,8 @@ def evaluate_adaptation_history(
     latest = records[-1]
     return {
         "schema_version": 1,
+        "interpretation": "prior_posterior_disagreement_only",
+        "adaptation_claim_supported": False,
         "sample_count": len(records),
         "latest_operation_id": int(latest["operation_id"]),
         "adaptation_state": state,

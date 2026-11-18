@@ -13,3 +13,11 @@ geometry_msgs/Point current_position
 float64[9] current_covariance
 geometry_msgs/Point tf_position
 float64[9] tf_covariance
+# Prediction snapshot, captured before this operation's observation feedback.
+# The fixed model uses startup parameters and the same raw inputs / CI rule.
+bool fixed_prior_available
+geometry_msgs/Point fixed_position
+float64[9] fixed_covariance
+uint32 learning_sample_count
+float64 ci_weight_current
+float64 fixed_ci_weight_current

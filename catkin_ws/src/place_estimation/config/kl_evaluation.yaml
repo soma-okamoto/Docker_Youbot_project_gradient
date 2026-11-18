@@ -15,7 +15,8 @@ max_pending_operations: 100
 
 # Trial-sequence adaptation assessment. The initial and recent windows are
 # compared, and a linear slope is calculated for both the full and recent
-# histories. A smaller KL/mean shift represents better prior adaptation.
+# histories. These describe distribution disagreement only; a smaller value
+# does not establish predictive improvement or personal adaptation.
 trend_window_size: 3
 trend_min_samples: 6
 relative_change_threshold: 0.10

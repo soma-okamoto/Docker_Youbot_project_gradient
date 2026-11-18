@@ -103,6 +103,14 @@ class PriorDistributionNode:
             sigma_param="~sigma_tf",
             default_sigma=[0.02, 0.02, 0.03],
         )
+        # Keep the non-adaptive reference independent of subsequent learning.
+        self.initial_bias_current = self.bias_current.copy()
+        self.initial_bias_tf = self.bias_tf.copy()
+        self.initial_cov_current = self.cov_current.copy()
+        self.initial_cov_tf = self.cov_tf.copy()
+        for value in (self.initial_bias_current, self.initial_bias_tf,
+                      self.initial_cov_current, self.initial_cov_tf):
+            value.setflags(write=False)
 
         # CI weight settings
         self.weight_mode = str(
@@ -495,6 +503,19 @@ class PriorDistributionNode:
         frame_id = self.output_frame
         stamp = rospy.Time.now()
 
+        fixed_prediction = None
+        if self.prior_context_pub is not None:
+            try:
+                fixed_prediction = self._ci_fusion(
+                    raw_current - self.initial_bias_current,
+                    self.initial_cov_current,
+                    raw_tf - self.initial_bias_tf,
+                    self.initial_cov_tf,
+                )
+            except (ValueError, np.linalg.LinAlgError) as error:
+                # An evaluation failure must not replace the operational prior.
+                rospy.logerr("Fixed-reference CI failed: %s", error)
+
         if tf_header is not None:
             if not frame_id:
                 frame_id = tf_header.frame_id
@@ -509,6 +530,8 @@ class PriorDistributionNode:
             operation_id,
             bottle_id,
             sources=(raw_current, raw_tf, corrected_current, corrected_tf),
+            fixed_prediction=fixed_prediction,
+            ci_weight_current=omega,
         )
 
         rospy.loginfo(
@@ -812,6 +835,8 @@ class PriorDistributionNode:
         operation_id: int,
         bottle_id: Optional[int] = None,
         sources=None,
+        fixed_prediction=None,
+        ci_weight_current: float = 0.0,
     ) -> None:
         pred_message = PoseStamped()
         pred_message.header.seq = operation_id
@@ -885,6 +910,14 @@ class PriorDistributionNode:
                 point.x, point.y, point.z = map(float, values)
             context.current_covariance = self.cov_current.reshape(-1).tolist()
             context.tf_covariance = self.cov_tf.reshape(-1).tolist()
+            context.learning_sample_count = self.learning_count
+            context.ci_weight_current = ci_weight_current
+            context.fixed_prior_available = fixed_prediction is not None
+            if fixed_prediction is not None:
+                fixed_position, fixed_covariance, fixed_weight = fixed_prediction
+                context.fixed_position.x, context.fixed_position.y, context.fixed_position.z = map(float, fixed_position)
+                context.fixed_covariance = fixed_covariance.reshape(-1).tolist()
+                context.fixed_ci_weight_current = fixed_weight
             self.prior_context_pub.publish(context)
 
 

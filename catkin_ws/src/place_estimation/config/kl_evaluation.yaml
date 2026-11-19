@@ -1,0 +1,22 @@
+# KL evaluation topics
+prior_pose_topic: /P_pred
+prior_cov_topic: /Sigma_pred
+posterior_pose_topic: /P_place
+posterior_cov_topic: /Sigma_place
+metrics_topic: /kl_evaluation
+status_topic: /kl_evaluation_status
+summary_topic: /kl_adaptation_summary
+
+expected_frame: base_footprint
+
+# Trend evaluation
+ema_alpha: 0.20
+max_pending_operations: 100
+
+# Trial-sequence adaptation assessment. The initial and recent windows are
+# compared, and a linear slope is calculated for both the full and recent
+# histories. A smaller KL/mean shift represents better prior adaptation.
+trend_window_size: 3
+trend_min_samples: 6
+relative_change_threshold: 0.10
+normalized_slope_threshold: 0.02

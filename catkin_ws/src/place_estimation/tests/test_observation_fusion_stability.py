@@ -1,0 +1,465 @@
+"""ROS-free regression tests; run with python3 -m unittest discover -s tests."""
+import importlib.util
+from pathlib import Path
+import sys
+from types import ModuleType, SimpleNamespace
+import unittest
+from unittest.mock import Mock, patch
+
+import numpy as np
+
+
+def load_node():
+    rospy = ModuleType('rospy')
+    for name in ('Publisher', 'Subscriber', 'loginfo', 'logwarn', 'logerr',
+                 'logerr_throttle', 'logwarn_throttle'):
+        setattr(rospy, name, Mock())
+    geometry = ModuleType('geometry_msgs.msg')
+    geometry.PoseStamped = SimpleNamespace
+    geometry.PoseWithCovarianceStamped = SimpleNamespace
+    std = ModuleType('std_msgs.msg')
+    for name in ('Float32MultiArray', 'Int32', 'MultiArrayDimension', 'String'):
+        setattr(std, name, SimpleNamespace)
+    modules = {'rospy': rospy, 'geometry_msgs': ModuleType('geometry_msgs'),
+               'geometry_msgs.msg': geometry, 'std_msgs': ModuleType('std_msgs'),
+               'std_msgs.msg': std}
+    path = Path(__file__).resolve().parents[1] / 'scripts/observation_fusion_node_new.py'
+    spec = importlib.util.spec_from_file_location('fusion_under_test', path)
+    module = importlib.util.module_from_spec(spec)
+    with patch.dict(sys.modules, modules):
+        spec.loader.exec_module(module)
+    return module.ObservationFusionNode, rospy
+
+
+Node, rospy = load_node()
+
+
+def cov(std):
+    return np.eye(3) * std ** 2
+
+
+def record(x, covariance):
+    return [x, 0., 0.] + np.asarray(covariance).reshape(-1).tolist()
+
+
+class StabilityTests(unittest.TestCase):
+    def node(self, **params):
+        # Existing stability/CI cases deliberately use observations metres from
+        # the prior. Keep them inside a wide gate; gate-specific cases below
+        # explicitly use the production default (25).
+        settings = {'~meta_message_type': 'float32_multi_array',
+                    '~candidate_gate_yolo': 20000., '~candidate_gate_meta': 20000.}
+        settings.update({'~' + k: v for k, v in params.items()})
+        rospy.get_param = lambda name, default=None: settings.get(name, default)
+        rospy.has_param = lambda name: name in settings
+        node = Node()
+        node.active = True
+        node.prior = np.array([5., 0., 0.])
+        node.prior_cov = cov(.05)
+        node._publish = Mock()
+        return node
+
+    def finish(self, node, yolo, meta):
+        node.yolo_candidates = [np.array([x, 0., 0.]) for x, _ in yolo]
+        node.yolo_covariances = [c for _, c in yolo]
+        node.meta_candidates = [np.array([x, 0., 0.]) for x, _ in meta]
+        node.meta_covariances = [c for _, c in meta]
+        node.yolo_received = bool(yolo)
+        node.meta_received = bool(meta)
+        node._finalize_locked('test')
+        node._publish.assert_called_once()
+        self.assertFalse(node.active)
+        self.assertEqual(node.meta_covariances, [])
+        return node._publish.call_args.kwargs
+
+    def test_mismatch_uses_more_stable_sensor_in_both_directions(self):
+        for ystd, mstd, expected in ((.02, .06, 'yolo'), (.06, .02, 'meta')):
+            with self.subTest(expected=expected):
+                # Legacy preference must not override stability.
+                node = self.node(mismatch_preferred_sensor='meta' if expected == 'yolo' else 'yolo')
+                out = self.finish(node, [(0., cov(ystd))], [(1., cov(mstd))])
+                self.assertEqual(out['status'], 'sensor_mismatch_' + expected + '_selected')
+                self.assertEqual(out['position'][0], 0. if expected == 'yolo' else 1.)
+                np.testing.assert_allclose(out['covariance'], cov(min(ystd, mstd)))
+
+    def test_equal_uncertainty_conflict_uses_prior(self):
+        out = self.finish(self.node(), [(0., cov(.02))], [(1., cov(.02))])
+        self.assertEqual(out['status'], 'sensor_mismatch_equal_uncertainty_prior_used')
+        np.testing.assert_allclose(out['position'], [5., 0., 0.])
+        np.testing.assert_allclose(out['covariance'], cov(.05))
+
+    def test_consistent_observations_still_fuse(self):
+        out = self.finish(self.node(), [(0., cov(.02))], [(.01, cov(.02))])
+        self.assertEqual(out['status'], 'yolo_meta_fused')
+        np.testing.assert_allclose(out['position'], [.005, 0., 0.])
+        np.testing.assert_allclose(out['covariance'], cov(.02))
+
+    def test_near_single_observation_fuses_with_prior(self):
+        node = self.node(observation_ci_weight_mode='fixed',
+                         single_weight_prior=.5)
+        out = self.finish(node, [(5.01, cov(.05))], [])
+        self.assertEqual(out['status'], 'prior_yolo_fused')
+        np.testing.assert_allclose(out['position'], [5.005, 0., 0.])
+        np.testing.assert_allclose(out['covariance'], cov(.05))
+
+    def test_far_single_observation_excludes_prior(self):
+        out = self.finish(self.node(observation_ci_weight_mode='fixed'),
+                          [(0., cov(.02))], [])
+        self.assertEqual(out['status'], 'yolo_only')
+        np.testing.assert_allclose(out['position'], [0., 0., 0.])
+
+    def test_near_consistent_pair_uses_three_source_ci(self):
+        node = self.node(observation_ci_weight_mode='fixed',
+                         both_weights=[.34, .33, .33])
+        out = self.finish(node, [(5., cov(.05))], [(5.01, cov(.05))])
+        self.assertEqual(out['status'], 'prior_yolo_meta_fused')
+        np.testing.assert_allclose(out['position'], [5.0033, 0., 0.])
+        np.testing.assert_allclose(out['covariance'], cov(.05))
+
+    def test_consistent_pair_prefers_prior_proximity_over_perfect_agreement(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        # Both pairs pass all gates; the farther pair agrees perfectly.
+        out = self.finish(node, [(5.01, cov(.02)), (5.20, cov(.02))],
+                          [(5.02, cov(.02)), (5.20, cov(.02))])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+        self.assertEqual(out['status'], 'prior_yolo_meta_fused')
+        self.assertGreater(out['d2_pair'], 0.)
+
+    def test_source_guard_rescues_observation_without_fusing_far_prior(self):
+        for source in ('current', 'tf'):
+            with self.subTest(source=source):
+                node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+                node.prior_sources = {source: (np.array([0., 0., 0.]), cov(.05))}
+                out = self.finish(node, [(.01, cov(.02))], [])
+                self.assertEqual(out['status'], 'yolo_only')
+                self.assertGreater(out['d2_yolo'], 25.)
+                self.assertGreater(out['yolo_scores'][0], 0.)
+                np.testing.assert_allclose(out['position'], [.01, 0., 0.])
+                self.assertIsNotNone(out['used_observation_position'])
+                self.assertEqual(node.prior_sources, {})
+
+    def test_source_guard_rescues_consistent_pair(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior_sources = {'current': (np.zeros(3), cov(.05))}
+        out = self.finish(node, [(.01, cov(.02))], [(.02, cov(.02))])
+        self.assertEqual(out['status'], 'yolo_meta_fused')
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+
+    def test_source_guard_keeps_fused_prior_candidates_as_first_choice(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior_sources = {'current': (np.zeros(3), cov(.05))}
+        out = self.finish(node, [(0., cov(.02)), (5.01, cov(.02))],
+                          [(0., cov(.02)), (5.02, cov(.02))])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (1, 1))
+        self.assertEqual(out['status'], 'prior_yolo_meta_fused')
+
+    def test_source_guard_rejects_observations_far_from_every_reference(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior_sources = {'current': (np.zeros(3), cov(.05)),
+                              'tf': (np.array([5., 0., 0.]), cov(.02))}
+        out = self.finish(node, [(2., cov(.02))], [(2., cov(.02))])
+        self.assertEqual(out['status'], 'no_valid_observation')
+
+    def test_source_guard_still_requires_valid_observation_covariance(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior_sources = {'current': (np.zeros(3), cov(.05))}
+        out = self.finish(node, [(0., cov(.2))], [])
+        self.assertEqual(out['status'], 'no_valid_observation')
+
+    def test_reported_high_arm_snapshot_is_rescued_by_current(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node.prior = np.array([.1706291557, -.2535352473, .3116912362])
+        node.prior_cov = np.diag([.0004, .0004, .0009])
+        node.prior_sources = {
+            'current': (np.array([.1239973456, -.3110205233, .1051122546]), cov(.05)),
+            'tf': (node.prior.copy(), node.prior_cov.copy()),
+        }
+        observation = np.array([.1728138030, -.2875822484, .1157009080])
+        node.yolo_candidates = [observation]
+        node.yolo_covariances = [np.diag([.000025, .000025, .0001])]
+        references = node._reference_distances(observation, node.yolo_covariances[0])
+        self.assertGreater(references['prior'], 25.)
+        self.assertLess(references['current'], 7.815)
+        node.yolo_received = True
+        node._finalize_locked('test')
+        out = node._publish.call_args.kwargs
+        self.assertEqual(out['status'], 'yolo_only')
+        np.testing.assert_allclose(out['position'], observation)
+
+    def test_far_agreeing_pair_cannot_replace_near_pair(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(5.01, cov(.02)), (6., cov(.02))],
+                          [(5.02, cov(.02)), (6., cov(.02))])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+        self.assertEqual(out['yolo_scores'][1], 0.)
+        self.assertEqual(out['meta_scores'][1], 0.)
+        self.assertGreater(out['yolo_distances'][1], 25.)
+
+    def test_far_agreeing_observations_use_prior_without_learning_feedback(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(6., cov(.02))], [(6., cov(.02))])
+        self.assertEqual(out['status'], 'no_valid_observation')
+        self.assertEqual((out['yolo_index'], out['meta_index']), (-1, -1))
+        np.testing.assert_allclose(out['position'], [5., 0., 0.])
+        self.assertIsNone(out['used_observation_position'])
+        self.assertIsNone(out['used_observation_covariance'])
+
+    def test_single_sensor_rejects_far_candidate(self):
+        for sensor in ('yolo', 'meta'):
+            with self.subTest(sensor=sensor):
+                node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+                out = self.finish(node, [(6., cov(.02))] if sensor == 'yolo' else [],
+                                  [(6., cov(.02))] if sensor == 'meta' else [])
+                self.assertEqual(out['status'], 'no_valid_observation')
+                self.assertEqual(out[sensor + '_index'], -1)
+
+    def test_agreeing_observations_between_ci_and_candidate_gates_are_used(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(5.20, cov(.02))], [(5.20, cov(.02))])
+        self.assertEqual(out['status'], 'yolo_meta_fused')
+        np.testing.assert_allclose(out['position'], [5.20, 0., 0.])
+        self.assertIsNotNone(out['used_observation_position'])
+
+    def test_pair_must_be_consistent_even_if_individual_candidates_are_near(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(4.90, cov(.02)), (5.22, cov(.02))],
+                          [(5.10, cov(.02)), (5.22, cov(.02))])
+        # Independently closest candidates are inconsistent; use the matching
+        # pair that is still inside the hard gates, without including the prior.
+        self.assertEqual((out['yolo_index'], out['meta_index']), (1, 1))
+        self.assertEqual(out['status'], 'yolo_meta_fused')
+
+    def test_rejected_pair_cannot_reenter_when_no_eligible_pair_agrees(self):
+        node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+        out = self.finish(node, [(4.90, cov(.02)), (6., cov(.02))],
+                          [(5.10, cov(.02)), (6., cov(.02))])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+        self.assertEqual(out['status'], 'sensor_mismatch_equal_uncertainty_prior_used')
+
+    def test_candidate_gate_boundary_is_inclusive(self):
+        for sensor in ('yolo', 'meta'):
+            for x, expected in ((5.5, True), (5.5001, False)):
+                with self.subTest(sensor=sensor, x=x):
+                    node = self.node(candidate_gate_yolo=25., candidate_gate_meta=25.)
+                    node.prior_cov = cov(.06)
+                    # Combined variance .01 -> d²=25 at a .5 m residual.
+                    obs = [(x, cov(.08))]
+                    out = self.finish(node, obs if sensor == 'yolo' else [],
+                                      obs if sensor == 'meta' else [])
+                    self.assertEqual(out[sensor + '_index'], 0 if expected else -1)
+
+    def test_candidate_gate_configuration_is_validated(self):
+        for sensor in ('yolo', 'meta'):
+            for value in (0., -1., 7., float('nan'), float('inf')):
+                with self.subTest(sensor=sensor, value=value), self.assertRaises(ValueError):
+                    self.node(**{'candidate_gate_' + sensor: value})
+        # Equality with the CI gate is valid.
+        self.node(candidate_gate_yolo=7.815, candidate_gate_meta=7.815)
+
+    def test_meta_stream_selects_near_track_over_far_agreeing_track(self):
+        node = self.node(meta_input_mode='stream', meta_candidate_stride=12,
+                         meta_covariance_indices=list(range(3, 12)),
+                         candidate_gate_yolo=25., candidate_gate_meta=25.)
+        node._yolo_array_cb(SimpleNamespace(data=record(5.01, cov(.02)) + record(6., cov(.02))))
+        for x in (5.02, 5.021, 5.019):
+            node._meta_array_cb(SimpleNamespace(data=record(x, cov(.02)) + record(6., cov(.02))))
+        node._timeout_cb(None)
+        out = node._publish.call_args.kwargs
+        self.assertEqual((out['yolo_index'], out['meta_index']), (0, 0))
+        self.assertEqual(out['status'], 'prior_yolo_meta_fused')
+
+    def test_ci_optimizer_minimizes_trace(self):
+        node = self.node(observation_ci_weight_mode='optimize',
+                         observation_ci_weight_step=.01)
+        position, covariance, weights = node._ci_fuse(
+            [np.array([5., 0., 0.]), np.array([5.01, 0., 0.])],
+            [cov(.05), cov(.02)],
+            [.5, .5],
+        )
+        np.testing.assert_allclose(position, [5.01, 0., 0.])
+        np.testing.assert_allclose(covariance, cov(.02))
+        np.testing.assert_allclose(weights, [0., 1.])
+
+    def test_large_covariance_rejected_even_when_positions_agree(self):
+        for sensor in ('yolo', 'meta'):
+            with self.subTest(sensor=sensor):
+                yc = cov(.2 if sensor == 'yolo' else .02)
+                mc = cov(.2 if sensor == 'meta' else .02)
+                out = self.finish(self.node(), [(0., yc)], [(0., mc)])
+                self.assertEqual(out['status'], 'meta_only' if sensor == 'yolo' else 'yolo_only')
+                self.assertEqual(out[sensor + '_index'], -1)
+                np.testing.assert_array_equal(out[sensor + '_scores'], [0.])
+
+    def test_both_unstable_use_prior(self):
+        out = self.finish(self.node(), [(0., cov(.2))], [(0., cov(.3))])
+        self.assertEqual(out['status'], 'no_valid_observation')
+        np.testing.assert_allclose(out['position'], [5., 0., 0.])
+        self.assertEqual((out['yolo_index'], out['meta_index']), (-1, -1))
+
+    def test_single_unstable_uses_prior(self):
+        out = self.finish(self.node(), [(0., cov(.2))], [])
+        self.assertEqual(out['status'], 'no_valid_observation')
+
+    def test_no_observation_uses_prior(self):
+        out = self.finish(self.node(), [], [])
+        self.assertEqual(out['status'], 'no_observation')
+
+    def test_invalid_covariance_does_not_hide_valid_candidate(self):
+        invalids = [np.full((3, 3), np.nan), np.full((3, 3), np.inf),
+                    np.zeros((3, 3)), np.diag([-.01, .01, .01]),
+                    np.array([[.001, .002, 0.], [.002, .001, 0.], [0., 0., .001]])]
+        for invalid in invalids:
+            with self.subTest(covariance=invalid):
+                out = self.finish(self.node(), [(0., invalid), (.1, cov(.02))], [])
+                self.assertEqual(out['status'], 'yolo_only')
+                self.assertEqual(out['yolo_index'], 1)
+                self.assertEqual(out['yolo_scores'][0], 0.)
+
+    def test_rejected_candidate_cannot_reenter_pair_search(self):
+        # Rejected pair has perfect positional agreement; valid pair also exists.
+        for sensor in ('yolo', 'meta'):
+            with self.subTest(sensor=sensor):
+                mixed = [(0., cov(.2)), (.01, cov(.02))]
+                single = [(0., cov(.02))]
+                out = self.finish(self.node(), mixed if sensor == 'yolo' else single,
+                                  mixed if sensor == 'meta' else single)
+                self.assertEqual(out['status'], 'yolo_meta_fused')
+                self.assertEqual(out[sensor + '_index'], 1)
+                self.assertEqual(out[sensor + '_scores'][0], 0.)
+                self.assertAlmostEqual(out['position'][0], .005)
+
+    def test_uncertainty_equivalence_tolerance_is_configurable(self):
+        almost_equal = [(1., cov(.0205))]
+        out = self.finish(self.node(), [(0., cov(.02))], almost_equal)
+        self.assertEqual(
+            out['status'], 'sensor_mismatch_equal_uncertainty_prior_used'
+        )
+
+        node = self.node(uncertainty_trace_relative_tolerance=0.,
+                         uncertainty_trace_absolute_tolerance=0.)
+        out = self.finish(node, [(0., cov(.02))], almost_equal)
+        self.assertEqual(out['status'], 'sensor_mismatch_yolo_selected')
+
+    def test_gate_uses_principal_variance_including_correlations(self):
+        c = np.array([[.006, .005, 0.], [.005, .006, 0.], [0., 0., .001]])
+        out = self.finish(self.node(), [(0., c)], [])
+        self.assertEqual(out['status'], 'no_valid_observation')
+
+    def test_threshold_boundary_and_sensor_specific_configuration(self):
+        out = self.finish(self.node(max_std_yolo=.1), [(0., cov(.1))], [])
+        self.assertEqual(out['status'], 'yolo_only')
+        out = self.finish(self.node(max_std_yolo=.03, max_std_meta=.07),
+                          [(0., cov(.04))], [(1., cov(.06))])
+        self.assertEqual(out['status'], 'meta_only')
+
+    def test_invalid_threshold_configuration_is_rejected(self):
+        for name in ('max_std_yolo', 'max_std_meta'):
+            for value in (0., -1., float('nan'), float('inf')):
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    self.node(**{name: value})
+
+        for name in ('uncertainty_trace_relative_tolerance',
+                     'uncertainty_trace_absolute_tolerance'):
+            for value in (-1., float('nan'), float('inf')):
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    self.node(**{name: value})
+
+    def test_meta_covariance_input_affects_actual_selection(self):
+        node = self.node(meta_candidate_stride=12, meta_covariance_indices=list(range(3, 12)))
+        node._meta_array_cb(SimpleNamespace(data=record(1., cov(.01))))
+        node._yolo_array_cb(SimpleNamespace(data=record(0., cov(.06))))
+        out = node._publish.call_args.kwargs
+        self.assertEqual(out['status'], 'sensor_mismatch_meta_selected')
+        np.testing.assert_allclose(out['covariance'], cov(.01))
+
+    def test_invalid_yolo_input_covariance_is_not_replaced_by_fixed_covariance(self):
+        node = self.node(enable_yolo=True)
+        node._yolo_array_cb(SimpleNamespace(data=record(0., np.full((3, 3), np.nan))))
+        node._meta_array_cb(SimpleNamespace(data=[1., 0., 0.]))
+        out = node._publish.call_args.kwargs
+        self.assertEqual(out['status'], 'meta_only')
+
+    def test_legacy_meta_xyz_input_uses_fixed_covariance(self):
+        node = self.node(enable_yolo=False)
+        node._meta_array_cb(SimpleNamespace(data=[1., 0., 0.]))
+        out = node._publish.call_args.kwargs
+        self.assertEqual(out['status'], 'meta_only')
+        np.testing.assert_allclose(out['covariance'], node.cov_meta)
+
+    def test_legacy_meta_pose_input_uses_fixed_covariance(self):
+        node = self.node(enable_yolo=False, meta_message_type='pose_stamped')
+        msg = SimpleNamespace(header=SimpleNamespace(frame_id='base_footprint'),
+                              pose=SimpleNamespace(position=SimpleNamespace(x=1., y=0., z=0.)))
+        node._meta_pose_cb(msg)
+        self.assertEqual(node._publish.call_args.kwargs['status'], 'meta_only')
+
+    def test_meta_stream_keeps_covariances_aligned_and_truncates_together(self):
+        node = self.node(meta_input_mode='stream', meta_candidate_stride=12,
+                         meta_covariance_indices=list(range(3, 12)),
+                         max_meta_candidates=2, min_observation_frames=2,
+                         min_detection_ratio=1.)
+        node._meta_array_cb(SimpleNamespace(data=record(float('nan'), cov(.09)) + record(1., cov(.01))))
+        node._meta_array_cb(SimpleNamespace(data=record(1.01, cov(.02)) + record(3., cov(.03))))
+        self.assertEqual(len(node.meta_candidates), 2)
+        self.assertEqual(len(node.meta_covariances), 2)
+        np.testing.assert_allclose(node.meta_covariances[0], cov(.01))
+        np.testing.assert_allclose(node.meta_covariances[1], cov(.02))
+        node._publish.assert_not_called()
+        node._timeout_cb(None)
+        self.assertEqual(node._publish.call_args.kwargs['status'], 'meta_only')
+        self.assertEqual(node.meta_covariances, [])
+
+    def test_stream_builds_mean_and_covariance_from_multiple_frames(self):
+        node = self.node(enable_yolo=False, meta_input_mode='stream',
+                         min_observation_frames=3, min_detection_ratio=1.)
+        for x in (.99, 1., 1.01):
+            node._meta_array_cb(SimpleNamespace(data=[x, 0., 0.]))
+        node._timeout_cb(None)
+        out = node._publish.call_args.kwargs
+        self.assertEqual(out['status'], 'meta_only')
+        np.testing.assert_allclose(out['position'], [1., 0., 0.])
+        expected = np.diag([(.0001 + .0004) / 3., .0004 / 3., .0009 / 3.])
+        np.testing.assert_allclose(out['covariance'], expected, atol=1.e-10)
+
+    def test_stream_rejects_unassociated_one_frame_tracks(self):
+        node = self.node(enable_yolo=False, meta_input_mode='stream',
+                         min_observation_frames=2,
+                         candidate_association_distance=.05)
+        for x in (0., 1., 2.):
+            node._meta_array_cb(SimpleNamespace(data=[x, 0., 0.]))
+        node._timeout_cb(None)
+        self.assertEqual(
+            node._publish.call_args.kwargs['status'], 'no_valid_observation'
+        )
+
+    def test_stream_detection_ratio_is_enforced(self):
+        node = self.node(enable_yolo=False, meta_input_mode='stream',
+                         min_observation_frames=3, min_detection_ratio=.6)
+        for x in (1., 1.01, .99):
+            node._meta_array_cb(SimpleNamespace(data=[x, 0., 0.]))
+        for _ in range(3):
+            node._meta_array_cb(SimpleNamespace(data=[]))
+        node._timeout_cb(None)
+        self.assertEqual(
+            node._publish.call_args.kwargs['status'], 'no_valid_observation'
+        )
+
+    def test_bad_or_empty_meta_covariance_messages(self):
+        node = self.node(enable_yolo=False, meta_candidate_stride=12,
+                         meta_covariance_indices=list(range(3, 12)))
+        node._meta_array_cb(SimpleNamespace(data=[1., 2., 3.]))
+        self.assertFalse(node.meta_received)
+        node._meta_array_cb(SimpleNamespace(data=[]))
+        self.assertEqual(node._publish.call_args.kwargs['status'], 'no_valid_observation')
+
+    def test_meta_covariance_configuration_is_validated(self):
+        for params in ({'meta_covariance_indices': list(range(3, 12))},
+                       {'meta_candidate_stride': 12, 'meta_covariance_indices': [3] * 9},
+                       {'meta_message_type': 'pose_stamped', 'meta_candidate_stride': 12,
+                        'meta_covariance_indices': list(range(3, 12))}):
+            with self.subTest(params=params), self.assertRaises(ValueError):
+                self.node(**params)
+
+
+if __name__ == '__main__':
+    unittest.main()

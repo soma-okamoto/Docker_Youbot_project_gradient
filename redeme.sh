@@ -23,13 +23,14 @@ sudo ntpdate -u ccntp.meijo-u.ac.jp
 PC2で実行必須 
 sudo ip route add 10.42.0.0/24 via 192.168.11.48
 
-ip route get 10.42.0.240
-
 PC1で実行必須
-# sudo sysctl -w net.ipv4.ip_forward=1
+sudo sysctl -w net.ipv4.ip_forward=1
 
-# sudo iptables -A FORWARD -i wlo1 -o eno1 -j ACCEPT
-# sudo iptables -A FORWARD -i eno1 -o wlo1 -j ACCEPT
+sudo iptables -A FORWARD -i wlo1 -o eno1 -j ACCEPT
+sudo iptables -A FORWARD -i eno1 -o wlo1 -j ACCEPT
+
+
+
 
 
 ####################################################################################
@@ -38,8 +39,8 @@ PC3手順
 #####################################################################
 ###############################Youbotsim#######################
 cd Doceker_ws/Docker_youbot_sim
-export ROS_IP=192.168.11.47
-export ROS_MASTER_URI=http://192.168.11.47:11311
+export ROS_IP=192.168.11.13
+export ROS_MASTER_URI=http://192.168.11.30:11311
 source devel/setup.bash
 
 roslaunch youbot_gazebo_robot youbot_dual_arm.launch world:=empty_world
@@ -105,12 +106,15 @@ rosrun esaki_youbot_project_gradient gripper.py
 
 rosrun esaki_youbot_project_gradient youbot_camera_real_trajectory_node.py 
 
+右アーム追従＆tf
 rosrun esaki_youbot_project_gradient youbot_camera_trajectory_TF.py 
 
 
 ###SimBridge
 rosrun esaki_youbot_project_gradient Bridge_Simulation_command.py
 rosrun esaki_youbot_project_gradient Bridge_Simulation_TF.py
+
+
 
 # ####Slam
 # roslaunch esaki_slam youbot_move_base.launch
@@ -138,12 +142,14 @@ rosrun esaki_youbot_project_gradient move_base_global_registration.py
 rosrun esaki_youbot_project_gradient afine_transformation.py
 
 
-
-###############
-roslaunch place_estimation place_estimation_pipeline.launch 
+########
+catkin clean -f 
+ 
 
 
 ############################################################################################
+########################################################################################################
+
 cd realsense_ws
 export ROS_IP=192.168.11.47
 export ROS_MASTER_URI=http://192.168.11.48:11311
@@ -165,12 +171,12 @@ source /opt/ros_py310/setup.bash
 source /home/dars/catkin_ws/devel/setup.bash
 
 cd /home/dars/catkin_ws/src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
-
 rosrun Yolov5_StrongSORT track_save_gpu.py \
   --device 0 \
   --view-img
 
-rosrun Yolov5_StrongSORT track_P_yolo.py 
+＃これarm2のcommandないとエラーはく
+ 
 
 rosrun Yolov5_StrongSORT QRPostion_test.py 
 

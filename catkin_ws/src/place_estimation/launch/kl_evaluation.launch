@@ -1,0 +1,9 @@
+<launch>
+  <node pkg="place_estimation"
+        type="kl_evaluation_node.py"
+        name="kl_evaluation_node"
+        output="screen">
+    <rosparam command="load"
+              file="$(find place_estimation)/config/kl_evaluation.yaml" />
+  </node>
+</launch>

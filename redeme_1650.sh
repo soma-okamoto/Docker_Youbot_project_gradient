@@ -1,7 +1,11 @@
 ######################################################################################################
 #################################################################################################
 #ホスト側
+HomePC 
 
+
+
+################
 PC２
 
 export ROS_MASTER_URI=http://192.168.11.14:11311
@@ -11,16 +15,33 @@ export ROS_HOSTNAME=192.168.11.14
 roslaunch rosbridge_server rosbridge_websocket.launch
 
 # PC３ の IP
-export ROS_IP=192.168.11.6
-export ROS_MASTER_URI=http://192.168.11.14:11311
+# export ROS_IP=192.168.11.6
+# export ROS_MASTER_URI=http://192.168.11.14:11311
 
 source /opt/ros/noetic/setup.bash
 
 export ROS_IP=192.168.1.23
 export ROS_MASTER_URI=http://192.168.1.23:11311
+PYTHONNOUSERSITE=1 roslaunch rosbridge_server rosbridge_websocket.launch
+
+
+source /opt/ros/noetic/setup.bash
+
+PLACE_WS=/home/dars/Docker_ws/Docker_Youbot_project_gradient/catkin_ws
+
+export ROS_PACKAGE_PATH="$PLACE_WS/src:$ROS_PACKAGE_PATH"
+export PYTHONPATH="$PLACE_WS/devel/.private/place_estimation/lib/python3/dist-packages:$PYTHONPATH"
 
 PYTHONNOUSERSITE=1 roslaunch rosbridge_server rosbridge_websocket.launch
+
+
+
 ####################################################################################
+
+sudo ip route replace 192.168.32.0/20 via 192.168.1.10
+
+sudo ip route add 192.168.32.0/20 via 192.168.1.10
+
 
 PC3手順
 #####################################################################
@@ -38,15 +59,15 @@ export ROS_IP=192.168.11.10
 export ROS_MASTER_URI=http://192.168.11.14:11311
 
 
-docker rm -f irm_dev
-docker run -d --name irm_dev --network=host \
-  -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
-  -e ROS_MASTER_URI=http://192.168.11.17:11311/ \
-  -e ROS_IP=192.168.11.16  \
-  irm_dev tail -f /dev/null
+# docker rm -f irm_dev
+# docker run -d --name irm_dev --network=host \
+#   -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
+#   -e ROS_MASTER_URI=http://192.168.11.17:11311/ \
+#   -e ROS_IP=192.168.11.16  \
+#   irm_dev tail -f /dev/null
 
-sudo docker rm -f irm_dev
-sudo docker run -d \
+docker rm -f irm_dev
+docker run -d \
   --name irm_dev \
   --gpus all \
   --network=host \
@@ -67,8 +88,8 @@ roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
 
 docker exec -it irm_dev bash
 cd Detect_ws
-export ROS_IP=192.168.11.16
-export ROS_MASTER_URI=http://192.168.11.17:11311
+export ROS_IP=192.168.1.23
+export ROS_MASTER_URI=http://192.168.1.23:11311
 source devel/setup.bash
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
@@ -81,16 +102,16 @@ export ROS_IP=192.168.11.16
 export ROS_MASTER_URI=http://192.168.11.17:11311
 
 
+# docker rm -f youbot_pro
+# docker run -d --name youbot_pro --network=host \
+#   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root  \
+#   -e ROS_MASTER_URI=http://192.168.11.17:11311 \
+#   -e ROS_IP=192.168.11.16 \
+#   youbot_pro tail -f /dev/null
+
+
 docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
-  -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
-  -e ROS_MASTER_URI=http://192.168.11.17:11311 \
-  -e ROS_IP=192.168.11.16 \
-  youbot_pro tail -f /dev/null
-
-
-sudo docker rm -f youbot_pro
-sudo docker run -d --name youbot_pro --network=host \
   -v ~/Docker_ws/Docker_Youbot_project_gradient:/root \
   -e ROS_MASTER_URI=http://192.168.1.23:11311 \
   -e ROS_IP=192.168.1.23 \
@@ -98,19 +119,18 @@ sudo docker run -d --name youbot_pro --network=host \
 
 
 
-sudo docker exec -it youbot_pro bash
-
+docker exec -it youbot_pro bash
 cd catkin_ws
 export ROS_IP=192.168.1.23
 export ROS_MASTER_URI=http://192.168.1.23:11311
 source devel/setup.bash
 
 
-docker exec -it youbot_pro bash
-cd catkin_ws
-export ROS_IP=192.168.11.16
-export ROS_MASTER_URI=http://192.168.11.17:11311
-source devel/setup.bash
+# docker exec -it youbot_pro bash
+# cd catkin_ws
+# export ROS_IP=192.168.11.16
+# export ROS_MASTER_URI=http://192.168.11.17:11311
+# source devel/setup.bash
 
 
 #####mani
@@ -135,7 +155,8 @@ roslaunch slam_toolbox online_async.launch
 
 
 # ####ベース移動
-rosrun esaki_youbot_project_gradient IRM_youbot_baseMove.py
+roslaunch esaki_youbot_project_gradient IRM_youbot_base_move.launch
+# rosrun esaki_youbot_project_gradient IRM_youbot_baseMove.py
 # rosrun esaki_youbot_project_gradient Origin_move_pub.py
 # rosrun esaki_youbot_project_gradient aster_static.py
 
@@ -155,6 +176,23 @@ rosrun esaki_youbot_project_gradient move_base_global_registration.py
 rosrun esaki_youbot_project_gradient afine_transformation.py
 
 
+#####基本の局所適応レジストレーション
+roslaunch place_estimation place_estimation_pipeline.launch
+
+
+#予備実験用のデータ収集・解析機能付き局所適応レジストレーション
+SAVE_DIR="$(rospack find place_estimation)/DataSaved"
+
+roslaunch place_estimation preliminary_experiment.launch \
+  output_bag:="$SAVE_DIR/preliminary_04"
+
+#Recording to '...bag'が表示されてから実験を開始してください。
+#実験終了後：
+rosrun place_estimation preliminary_experiment_analyzer.py \
+  "$SAVE_DIR/preliminary_04.bag" \
+  "$SAVE_DIR/preliminary_04_analysis" \
+  --meta-stride 12
+
 ########
 catkin clean -f 
  
@@ -169,11 +207,10 @@ export ROS_IP=192.168.1.23
 export ROS_MASTER_URI=http://192.168.1.23:11311
 source devel/setup.bash
 
-cd src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet/
 
 cd /home/dars/catkin_ws/src/Realsense_yolov5_Deepsort/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
 
-rosrun Yolov5_StrongSORT track_save_cpu.py --device 0
+# rosrun Yolov5_StrongSORT track_save_cpu.py --device 0
 
 # rosrun Yolov5_StrongSORT track_1.py
 # rosrun Yolov5_StrongSORT track_1.py --device cpu
@@ -182,19 +219,40 @@ sudo -E env \
   ROS_IP=192.168.1.23 \
   ./run_gtx1650.sh
 
+#betu notabu de zikkou
+sudo docker exec -it \
+  -e ROS_MASTER_URI=http://192.168.1.23:11311 \
+  -e ROS_IP=192.168.1.23 \
+  yolov5_strongsort_gtx1650 bash
+
 source /opt/ros/noetic/setup.bash
 source /home/dars/catkin_ws/devel/setup.bash
 cd /home/dars/catkin_ws/src/Realsense_yolov5_Deepsort/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
 
+
+rosrun Yolov5_StrongSORT track_P_meta.py
+# rosrun Yolov5_StrongSORT track_P_meta_before_qr.py
+
+rosrun Yolov5_StrongSORT QRPostion_test.py 
+
 rosrun Yolov5_StrongSORT track_save_cpu.py --device 0
+# rosrun Yolov5_StrongSORT track_save_cpu_fixed.py --device 0
+
+###track no ato kara zikkou
+rosrun Yolov5_StrongSORT track_P_yolo.py --device 0
+
+
+
+# rosrun Yolov5_StrongSORT track_save_gpu.py --device 0 \
+#   view_img
 
 # rosrun Yolov5_StrongSORT track.py --device cpu
 
 ＃これarm2のcommandないとエラーはく
  
-rosrun Yolov5_StrongSORT track_save_cpu.py 
+# rosrun Yolov5_StrongSORT track_save_cpu.py 
 
-rosrun Yolov5_StrongSORT QRPostion_test.py 
+
 
 # conda activate yolo_env
 # export ROS_MASTER_URI=http://192.168.11.14:11311
@@ -301,3 +359,47 @@ sudo iptables -F
 
 roslaunch realsense2_camera cubeslam_camera.launch
 
+
+
+rostopic pub -1 /P_current std_msgs/Float32MultiArray "
+layout:
+  dim: []
+  data_offset: 0
+data: [0.0, 0.12527843, -0.34797788, 0.09723821]
+"
+
+rostopic pub -1 /P_tf geometry_msgs/PoseStamped "
+header:
+  seq: 0
+  stamp: now
+  frame_id: 'base_footprint'
+pose:
+  position:
+    x: 0.16256916
+    y: -0.31096662
+    z: 0.18737462
+  orientation:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    w: 1.0
+"
+
+rostopic pub -1 /P_yolo std_msgs/Float32MultiArray "
+layout:
+  dim: []
+  data_offset: 0
+data: [
+  0.128170, -0.346040, 0.098402,
+  0.000025004081, 0.000000001573, 0.000000002937,
+  0.000000001573, 0.000025001531, -0.000000002337,
+  0.000000002937, -0.000000002337, 0.000100015124
+]
+"
+
+rostopic pub -1 /P_meta std_msgs/Float32MultiArray "
+layout:
+  dim: []
+  data_offset: 0
+data: [0.130000, -0.344000, 0.101000]
+"

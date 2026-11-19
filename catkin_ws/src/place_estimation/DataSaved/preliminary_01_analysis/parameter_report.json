@@ -1,0 +1,65 @@
+{
+  "current_min_variance_m2": 1e-08,
+  "data_completeness": {
+    "KL_evaluation": 0,
+    "P_current": 0,
+    "P_tf": 0,
+    "posterior_distribution": 0,
+    "prior_distribution": 0
+  },
+  "distributions": {
+    "kl_prior_to_posterior": {
+      "count": 0
+    },
+    "mean_shift_m": {
+      "count": 0
+    },
+    "selected_meta_d2": {
+      "count": 0
+    },
+    "selected_yolo_d2": {
+      "count": 0
+    },
+    "selected_yolo_meta_d2": {
+      "count": 0
+    },
+    "used_observation_principal_std_m": {
+      "count": 0
+    },
+    "yolo_candidate_principal_std_m": {
+      "count": 0
+    }
+  },
+  "final_adaptation_summary": null,
+  "learned_covariance_eigenvalues_m2": {
+    "count": 0
+  },
+  "learning_update_count": 0,
+  "min_variance_floor_hit_count": 0,
+  "operation_error_repeatability": {
+    "current_minus_used_observation": {
+      "count": 0
+    },
+    "tf_minus_used_observation": {
+      "count": 0
+    }
+  },
+  "parameter_candidates": {
+    "bias_stability_tolerance_m": 0.002,
+    "gate_meta_p95_diagnostic": null,
+    "gate_yolo_meta_p95_diagnostic": null,
+    "gate_yolo_p95_diagnostic": null,
+    "learning_min_samples_stability_candidate": null,
+    "max_std_yolo_p95_m_diagnostic": null,
+    "stable_updates_required": 3
+  },
+  "schema_version": 1,
+  "source_bag": "/root/catkin_ws/src/place_estimation/DataSaved/preliminary_01.bag",
+  "trial_count": 0,
+  "warnings": [
+    "These values describe repeatability and internal consistency; they do not measure absolute accuracy without ground truth.",
+    "P95 values are diagnostic candidates only. Freeze parameters using separate calibration data before the main experiment.",
+    "Distance distributions are affected by the current covariance and candidate-selection settings.",
+    "The recorded bias history did not establish a learning_min_samples candidate."
+  ]
+}

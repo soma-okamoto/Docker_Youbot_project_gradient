@@ -6,13 +6,22 @@
 # Inputs
 pred_topic: /P_pred
 pred_cov_topic: /Sigma_pred
+# Receive the ID and its distribution together; do not pair a separate ID topic.
+enable_bottle_id: true
+pred_with_id_topic: /P_pred_with_id
+# Atomic prior + original and bias-corrected Current/TF hypotheses.
+use_prior_source_guard: true
+prior_context_topic: /P_pred_context
+reference_distances_topic: /observation_reference_distances
 yolo_topic: /P_yolo
 meta_topic: /P_meta
 
 # Final outputs
 place_topic: /P_place
 place_cov_topic: /Sigma_place
+place_with_id_topic: /P_place_with_id
 status_topic: /observation_status
+used_observation_topic: /used_physical_observation
 
 # [selected YOLO d^2, selected Meta d^2, YOLO-Meta d^2]
 distance_topic: /observation_distances
@@ -62,17 +71,23 @@ meta_message_type: float32_multi_array
 
 # MetaがFloat32MultiArrayの場合:
 # packed:
-#   [x1,y1,z1, x2,y2,z2, ...] を1メッセージで受信
+#   共分散付きの全候補を1メッセージで受信
 # stream:
-#   複数メッセージをタイムアウトまで蓄積
+#   各メッセージを1フレームとしてタイムアウトまで蓄積
 #
 # MetaがPoseStampedの場合:
 # 複数候補なら stream を指定する。
 # meta_input_mode: packed
 meta_input_mode: stream
 
-meta_candidate_stride: 3
+meta_candidate_stride: 12
 meta_xyz_indices: [0, 1, 2]
+# streamでは複数フレームから平均位置と時間方向の実測共分散を生成する。
+# track_P_meta.pyが配信する観測ごとの3x3共分散を使用する。
+# 入力: [x,y,z,Sxx,Sxy,Sxz,Syx,Syy,Syz,Szx,Szy,Szz, ...]
+meta_covariance_indices: [3, 4, 5, 6, 7, 8, 9, 10, 11]
+# XYZのみの送信元を使う場合は stride: 3 とし、共分散インデックスを削除する。
+# その場合はsigma_metaをフレーム共分散として使用する。
 max_meta_candidates: 200
 
 # ---------------------------------------------------------------------------
@@ -84,19 +99,17 @@ bias_meta: [0.0, 0.0, 0.0]
 sigma_yolo: [0.03, 0.03, 0.04]
 sigma_meta: [0.02, 0.02, 0.03]
 
-# ---------------------------------------------------------------------------
-# Gating
-# ---------------------------------------------------------------------------
-# 3D chi-square 95%
-gate_yolo: 7.815
-gate_meta: 7.815
-gate_yolo_meta: 7.815
+# Experimentally tuned gates, stability limits, and timing parameters are in
+# local_registration_thresholds.yaml.
 
 # ---------------------------------------------------------------------------
-# Timing and fixed CI weights
+# CI settings
 # ---------------------------------------------------------------------------
-# observation_timeout: 2.0
-observation_timeout: 3.0
+# optimize: minimize the fused covariance trace on a simplex grid.
+# fixed: use single_weight_prior / both_weights below.
+observation_ci_weight_mode: optimize
+observation_ci_weight_step: 0.01
+observation_ci_objective: trace
 
 # Prior + one selected observation
 single_weight_prior: 0.5

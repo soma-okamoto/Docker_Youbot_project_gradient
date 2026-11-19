@@ -1,0 +1,41 @@
+# Local adaptive registration thresholds
+#
+# These values are provisional defaults. Tune them from real-sensor
+# experiments without changing the node implementation.
+
+# Candidate covariance validity: maximum principal-axis standard deviation [m]
+max_std_yolo: 0.10
+max_std_meta: 0.10
+
+# Squared Mahalanobis-distance gates (3 DoF chi-square 95% defaults)
+# gate_yolo / gate_meta decide whether the prior participates in CI.
+# Measurements outside these gates may still be used within candidate gates.
+gate_yolo: 7.815
+gate_meta: 7.815
+gate_yolo_meta: 7.815
+
+# Hard reference-distance limits, including mutually agreeing pairs.
+# With use_prior_source_guard, a candidate can also pass against the
+# same-operation, bias-corrected Current or TF source covariance.
+# Squared Mahalanobis distance; provisional defaults, not distances in metres.
+# Each must be >= the corresponding CI participation gate above.
+candidate_gate_yolo: 25.0
+candidate_gate_meta: 25.0
+# Among consistent pairs, prefer fewer source rescues, then smaller reference
+# distance sums; break ties by the YOLO-Meta distance.
+
+# Relative/absolute tolerance used when conflicting sensors have similar
+# covariance traces. If equivalent, neither sensor is preferred and the
+# prior is used.
+uncertainty_trace_relative_tolerance: 0.10
+uncertainty_trace_absolute_tolerance: 1.0e-6
+
+# Observation collection window [s]
+observation_timeout: 3.0
+
+# Multi-frame association and stability
+min_observation_frames: 3
+min_detection_ratio: 0.60
+max_frame_position_std_yolo: 0.10
+max_frame_position_std_meta: 0.10
+candidate_association_distance: 0.10

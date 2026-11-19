@@ -8,28 +8,41 @@ prior_distribution_node.py
 事前分布 N(P_pred, Sigma_pred) を生成するROS1ノード。
 
 Input
-  /P_current : std_msgs/Float32MultiArray  [x, y, z]
+  /P_current : std_msgs/Float32MultiArray  [bottle_id, x, y, z]
   /P_tf      : geometry_msgs/PoseStamped
 
 Output
   /P_pred     : geometry_msgs/PoseStamped
   /Sigma_pred : std_msgs/Float32MultiArray
                 [Sxx,Sxy,Sxz,Syx,Syy,Syz,Szx,Szy,Szz]
+  /learned_bias_current, /learned_bias_tf
+              : std_msgs/Float64MultiArray
+                [operation_id, sample_count, bx, by, bz]
+  /learned_covariance_current, /learned_covariance_tf
+              : std_msgs/Float64MultiArray
+                [operation_id, sample_count, 3x3 covariance row-major]
+  /learning_sample_count : std_msgs/Int32
 
 方針
   - P_current, P_tf は過去と平均しない。
   - 今回受信したXYZを、そのPlace操作の位置推定値として使う。
-  - バイアスと共分散はROSパラメータから読み込む。
-  - 初回はデフォルト値を使用し、将来は逐次学習した値へ差し替える。
+  - バイアスと共分散の初期値はROSパラメータから読み込む。
+  - 採用された物理観測のフィードバックから誤差特性を逐次更新する。
 """
 
 import threading
+import copy
 from typing import Optional, Tuple
 
 import numpy as np
 import rospy
-from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Float32MultiArray, MultiArrayDimension
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
+from std_msgs.msg import (
+    Float32MultiArray,
+    Float64MultiArray,
+    Int32,
+    MultiArrayDimension,
+)
 
 
 class PriorDistributionNode:
@@ -41,6 +54,29 @@ class PriorDistributionNode:
         self.tf_topic = rospy.get_param("~tf_topic", "/P_tf")
         self.pred_topic = rospy.get_param("~pred_topic", "/P_pred")
         self.cov_topic = rospy.get_param("~cov_topic", "/Sigma_pred")
+        self.enable_bottle_id = bool(rospy.get_param("~enable_bottle_id", False))
+        self.pred_with_id_topic = rospy.get_param("~pred_with_id_topic", "/P_pred_with_id")
+        self.publish_prior_context = bool(rospy.get_param("~publish_prior_context", False))
+        self.prior_context_topic = rospy.get_param("~prior_context_topic", "/P_pred_context")
+        self.used_observation_topic = rospy.get_param(
+            "~used_observation_topic", "/used_physical_observation"
+        )
+        self.learned_bias_current_topic = rospy.get_param(
+            "~learned_bias_current_topic", "/learned_bias_current"
+        )
+        self.learned_bias_tf_topic = rospy.get_param(
+            "~learned_bias_tf_topic", "/learned_bias_tf"
+        )
+        self.learned_covariance_current_topic = rospy.get_param(
+            "~learned_covariance_current_topic",
+            "/learned_covariance_current",
+        )
+        self.learned_covariance_tf_topic = rospy.get_param(
+            "~learned_covariance_tf_topic", "/learned_covariance_tf"
+        )
+        self.learning_sample_count_topic = rospy.get_param(
+            "~learning_sample_count_topic", "/learning_sample_count"
+        )
 
         # P_currentにはHeaderがないため、P_tfと同じ座標系であることを前提とする。
         self.expected_frame = rospy.get_param("~expected_frame", "")
@@ -90,8 +126,36 @@ class PriorDistributionNode:
 
         self._validate_settings()
 
+        # Sequential operation-error learning. The selected physical
+        # observation is fed back by observation_fusion_node_new.py.
+        self.enable_error_learning = bool(
+            rospy.get_param("~enable_error_learning", True)
+        )
+        self.learning_min_samples = int(
+            rospy.get_param("~learning_min_samples", 2)
+        )
+        self.max_pending_learning_operations = int(
+            rospy.get_param("~max_pending_learning_operations", 100)
+        )
+        if self.learning_min_samples < 2:
+            raise ValueError("~learning_min_samples must be at least 2")
+        if self.max_pending_learning_operations <= 0:
+            raise ValueError(
+                "~max_pending_learning_operations must be positive"
+            )
+
+        self.learning_count = 0
+        self.mean_error_current = np.zeros(3, dtype=np.float64)
+        self.mean_error_tf = np.zeros(3, dtype=np.float64)
+        self.error_m2_current = np.zeros((3, 3), dtype=np.float64)
+        self.error_m2_tf = np.zeros((3, 3), dtype=np.float64)
+        self.sum_used_covariance = np.zeros((3, 3), dtype=np.float64)
+        self.pending_learning_samples = {}
+        self.pending_learning_stamps = {}
+
         # 1操作分の受信待ちデータ
         self.pending_current: Optional[np.ndarray] = None
+        self.pending_bottle_id: Optional[int] = None
         self.pending_tf: Optional[np.ndarray] = None
         self.pending_tf_header = None
         self.operation_count = 0
@@ -101,6 +165,48 @@ class PriorDistributionNode:
         )
         self.cov_pub = rospy.Publisher(
             self.cov_topic, Float32MultiArray, queue_size=10
+        )
+        self.pred_with_id_pub = None
+        self.prior_context_pub = None
+        if self.publish_prior_context:
+            from place_estimation.msg import PriorContext
+            self.prior_context_pub = rospy.Publisher(
+                self.prior_context_topic, PriorContext, queue_size=10
+            )
+        if self.enable_bottle_id:
+            from place_estimation.msg import BottleDistribution
+            self.pred_with_id_pub = rospy.Publisher(
+                self.pred_with_id_topic, BottleDistribution, queue_size=10
+            )
+        self.learned_bias_current_pub = rospy.Publisher(
+            self.learned_bias_current_topic,
+            Float64MultiArray,
+            queue_size=10,
+            latch=True,
+        )
+        self.learned_bias_tf_pub = rospy.Publisher(
+            self.learned_bias_tf_topic,
+            Float64MultiArray,
+            queue_size=10,
+            latch=True,
+        )
+        self.learned_covariance_current_pub = rospy.Publisher(
+            self.learned_covariance_current_topic,
+            Float64MultiArray,
+            queue_size=10,
+            latch=True,
+        )
+        self.learned_covariance_tf_pub = rospy.Publisher(
+            self.learned_covariance_tf_topic,
+            Float64MultiArray,
+            queue_size=10,
+            latch=True,
+        )
+        self.learning_sample_count_pub = rospy.Publisher(
+            self.learning_sample_count_topic,
+            Int32,
+            queue_size=10,
+            latch=True,
         )
 
         self.current_sub = rospy.Subscriber(
@@ -113,6 +219,12 @@ class PriorDistributionNode:
             self.tf_topic,
             PoseStamped,
             self._tf_callback,
+            queue_size=10,
+        )
+        self.used_observation_sub = rospy.Subscriber(
+            self.used_observation_topic,
+            PoseWithCovarianceStamped,
+            self._used_observation_callback,
             queue_size=10,
         )
 
@@ -237,7 +349,7 @@ class PriorDistributionNode:
             rospy.logerr_throttle(
                 2.0,
                 "/P_current requires at least "
-                "4 values [metadata, x, y, z]",
+                "4 values [bottle_id, x, y, z]",
             )
             return
 
@@ -253,6 +365,15 @@ class PriorDistributionNode:
             )
             return
 
+        bottle_id = None
+        if self.enable_bottle_id:
+            value = float(message.data[0])
+            # Float32 encodes every integer exactly only through 2^24.
+            if not np.isfinite(value) or not 0 <= value <= 16777216 or not value.is_integer():
+                rospy.logerr_throttle(2.0, "/P_current bottle_id must be an integer in [0, 16777216]")
+                return
+            bottle_id = int(value)
+
         with self.lock:
             if self.pending_current is not None:
                 rospy.logwarn_throttle(
@@ -263,6 +384,7 @@ class PriorDistributionNode:
                 return
 
             self.pending_current = position
+            self.pending_bottle_id = bottle_id
             rospy.loginfo(
                 "P_current received: %s",
                 position,
@@ -322,13 +444,28 @@ class PriorDistributionNode:
         raw_current = self.pending_current.copy()
         raw_tf = self.pending_tf.copy()
         tf_header = self.pending_tf_header
+        bottle_id = self.pending_bottle_id
 
         # 同じ入力を次のPlace操作で再利用しない。
         self.pending_current = None
+        self.pending_bottle_id = None
         self.pending_tf = None
         self.pending_tf_header = None
 
         self.operation_count += 1
+        operation_id = self.operation_count
+
+        if self.enable_error_learning:
+            self.pending_learning_samples[operation_id] = (
+                raw_current.copy(), raw_tf.copy()
+            )
+            while (
+                len(self.pending_learning_samples)
+                > self.max_pending_learning_operations
+            ):
+                oldest = min(self.pending_learning_samples)
+                del self.pending_learning_samples[oldest]
+                self.pending_learning_stamps.pop(oldest, None)
 
         # e = P_source - P_ref と定義するため、
         # バイアス補正では推定位置からbiasを引く。
@@ -369,6 +506,9 @@ class PriorDistributionNode:
             pred_covariance,
             frame_id,
             stamp,
+            operation_id,
+            bottle_id,
+            sources=(raw_current, raw_tf, corrected_current, corrected_tf),
         )
 
         rospy.loginfo(
@@ -387,6 +527,185 @@ class PriorDistributionNode:
                 precision=8,
             ),
         )
+
+    @staticmethod
+    def _position_covariance(
+        message: PoseWithCovarianceStamped,
+    ) -> np.ndarray:
+        covariance_6d = np.asarray(
+            message.pose.covariance, dtype=np.float64
+        ).reshape(6, 6)
+        return covariance_6d[:3, :3]
+
+    @staticmethod
+    def _welford_update(
+        value: np.ndarray,
+        count: int,
+        mean: np.ndarray,
+        m2: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        delta = value - mean
+        updated_mean = mean + delta / float(count)
+        delta_after = value - updated_mean
+        updated_m2 = m2 + np.outer(delta, delta_after)
+        return updated_mean, updated_m2
+
+    def _used_observation_callback(
+        self,
+        message: PoseWithCovarianceStamped,
+    ) -> None:
+        if not self.enable_error_learning:
+            return
+
+        if (
+            self.expected_frame
+            and message.header.frame_id != self.expected_frame
+        ):
+            rospy.logerr_throttle(
+                2.0,
+                "Used observation frame mismatch: expected '%s', received '%s'",
+                self.expected_frame,
+                message.header.frame_id,
+            )
+            return
+
+        position = self._pose_position(message.pose)
+        if not self._is_valid_position(position):
+            rospy.logerr_throttle(2.0, "Used observation contains NaN or Inf")
+            return
+
+        try:
+            used_covariance = self._position_covariance(message)
+            if not np.all(np.isfinite(used_covariance)):
+                raise ValueError("non-finite covariance")
+            used_covariance = self._regularize_covariance(used_covariance)
+        except (ValueError, np.linalg.LinAlgError) as error:
+            rospy.logerr_throttle(
+                2.0, "Invalid used-observation covariance: %s", error
+            )
+            return
+
+        with self.lock:
+            # rospy overwrites Header.seq with this publisher's message count.
+            # Feedback is sparse, so its seq cannot identify a Place operation.
+            # Fusion echoes the prior's timestamp; match it to exactly one
+            # pending operation and fail closed on missing/ambiguous stamps.
+            feedback_stamp = getattr(message.header, "stamp", None)
+            matches = [
+                operation_id
+                for operation_id, stamp in self.pending_learning_stamps.items()
+                if stamp == feedback_stamp
+                and operation_id in self.pending_learning_samples
+            ]
+            if len(matches) != 1:
+                rospy.logwarn_throttle(
+                    2.0,
+                    "No unique operation sample for used observation stamp=%s "
+                    "(publisher seq=%d)",
+                    feedback_stamp, message.header.seq,
+                )
+                return
+            operation_id = matches[0]
+            sample = self.pending_learning_samples.pop(operation_id, None)
+            self.pending_learning_stamps.pop(operation_id, None)
+            if sample is None:
+                rospy.logwarn_throttle(
+                    2.0,
+                    "No operation sample for used observation seq=%d",
+                    operation_id,
+                )
+                return
+
+            raw_current, raw_tf = sample
+            error_current = raw_current - position
+            error_tf = raw_tf - position
+            self.learning_count += 1
+
+            (
+                self.mean_error_current,
+                self.error_m2_current,
+            ) = self._welford_update(
+                error_current,
+                self.learning_count,
+                self.mean_error_current,
+                self.error_m2_current,
+            )
+            (
+                self.mean_error_tf,
+                self.error_m2_tf,
+            ) = self._welford_update(
+                error_tf,
+                self.learning_count,
+                self.mean_error_tf,
+                self.error_m2_tf,
+            )
+            self.sum_used_covariance += used_covariance
+
+            self.bias_current = self.mean_error_current.copy()
+            self.bias_tf = self.mean_error_tf.copy()
+
+            if self.learning_count >= self.learning_min_samples:
+                average_used_covariance = (
+                    self.sum_used_covariance / float(self.learning_count)
+                )
+                sample_covariance_current = (
+                    self.error_m2_current / float(self.learning_count - 1)
+                )
+                sample_covariance_tf = (
+                    self.error_m2_tf / float(self.learning_count - 1)
+                )
+                self.cov_current = self._regularize_covariance(
+                    sample_covariance_current - average_used_covariance
+                )
+                self.cov_tf = self._regularize_covariance(
+                    sample_covariance_tf - average_used_covariance
+                )
+
+            self._publish_learning_state(operation_id)
+
+            rospy.loginfo(
+                "Learned operation error from seq=%d: n=%d, "
+                "bias_current=%s, bias_tf=%s",
+                operation_id,
+                self.learning_count,
+                np.array2string(self.bias_current, precision=6),
+                np.array2string(self.bias_tf, precision=6),
+            )
+
+    @staticmethod
+    def _learning_vector(
+        operation_id: int,
+        sample_count: int,
+        values: np.ndarray,
+    ) -> Float64MultiArray:
+        return Float64MultiArray(
+            data=[float(operation_id), float(sample_count)]
+            + np.asarray(values, dtype=float).reshape(-1).tolist()
+        )
+
+    def _publish_learning_state(self, operation_id: int) -> None:
+        """Publish the learned state for recording and offline calibration."""
+        self.learned_bias_current_pub.publish(
+            self._learning_vector(
+                operation_id, self.learning_count, self.bias_current
+            )
+        )
+        self.learned_bias_tf_pub.publish(
+            self._learning_vector(
+                operation_id, self.learning_count, self.bias_tf
+            )
+        )
+        self.learned_covariance_current_pub.publish(
+            self._learning_vector(
+                operation_id, self.learning_count, self.cov_current
+            )
+        )
+        self.learned_covariance_tf_pub.publish(
+            self._learning_vector(
+                operation_id, self.learning_count, self.cov_tf
+            )
+        )
+        self.learning_sample_count_pub.publish(Int32(data=self.learning_count))
 
     def _ci_fusion(
         self,
@@ -490,10 +809,16 @@ class PriorDistributionNode:
         covariance: np.ndarray,
         frame_id: str,
         stamp,
+        operation_id: int,
+        bottle_id: Optional[int] = None,
+        sources=None,
     ) -> None:
         pred_message = PoseStamped()
+        pred_message.header.seq = operation_id
         pred_message.header.frame_id = frame_id
         pred_message.header.stamp = stamp
+        if operation_id in self.pending_learning_samples:
+            self.pending_learning_stamps[operation_id] = copy.deepcopy(stamp)
 
         pred_message.pose.position.x = float(
             position[0]
@@ -536,6 +861,31 @@ class PriorDistributionNode:
         self.cov_pub.publish(
             covariance_message
         )
+        if self.pred_with_id_pub is not None and bottle_id is not None:
+            from place_estimation.msg import BottleDistribution
+            identified = BottleDistribution()
+            identified.header = pred_message.header
+            identified.bottle_id = bottle_id
+            identified.position = pred_message.pose.position
+            identified.covariance = covariance.reshape(-1).tolist()
+            self.pred_with_id_pub.publish(identified)
+        if self.prior_context_pub is not None and sources is not None:
+            from place_estimation.msg import PriorContext
+            context = PriorContext()
+            context.header = copy.deepcopy(pred_message.header)
+            context.operation_id = operation_id
+            context.bottle_id = -1 if bottle_id is None else bottle_id
+            context.position = copy.deepcopy(pred_message.pose.position)
+            context.covariance = covariance.reshape(-1).tolist()
+            for field, values in zip(
+                ("raw_current_position", "raw_tf_position", "current_position", "tf_position"),
+                sources,
+            ):
+                point = getattr(context, field)
+                point.x, point.y, point.z = map(float, values)
+            context.current_covariance = self.cov_current.reshape(-1).tolist()
+            context.tf_covariance = self.cov_tf.reshape(-1).tolist()
+            self.prior_context_pub.publish(context)
 
 
 def main() -> None:

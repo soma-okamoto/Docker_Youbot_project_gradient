@@ -24,6 +24,8 @@
               /learned_bias_current /learned_bias_tf
               /learned_covariance_current /learned_covariance_tf
               /learning_sample_count
+              /predictive_evaluation_input /predictive_evaluation
+              /predictive_evaluation_summary
               /kl_evaluation /kl_evaluation_status
               /kl_adaptation_summary" />
 </launch>

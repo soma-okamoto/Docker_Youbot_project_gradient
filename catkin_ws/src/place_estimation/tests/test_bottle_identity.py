@@ -16,6 +16,9 @@ class Time:
     def __eq__(self, other):
         return isinstance(other, Time) and self.value == other.value
 
+    def to_nsec(self):
+        return self.value
+
     @staticmethod
     def now():
         return Time(100)
@@ -56,6 +59,12 @@ class PriorContext(BottleDistribution):
             setattr(self, name + '_position', NS(x=0., y=0., z=0.))
         self.current_covariance = [0.] * 9
         self.tf_covariance = [0.] * 9
+        self.fixed_prior_available = False
+        self.fixed_position = NS(x=0., y=0., z=0.)
+        self.fixed_covariance = [0.] * 9
+        self.learning_sample_count = 0
+        self.ci_weight_current = 0.
+        self.fixed_ci_weight_current = 0.
 
 
 class BottleIdentityTests(unittest.TestCase):

@@ -29,11 +29,24 @@ except ImportError:
         principal_standard_deviation,
     )
 
+try:
+    from predictive_metrics import evaluate_trial, PredictiveHistory, SENSORS
+except ModuleNotFoundError as error:
+    if error.name != "predictive_metrics":
+        raise
+    evaluation_directory = Path(__file__).resolve().parents[1] / "evaluation"
+    if not evaluation_directory.is_dir():
+        import rospkg
+        evaluation_directory = Path(rospkg.RosPack().get_path("place_estimation")) / "evaluation"
+    sys.path.insert(0, str(evaluation_directory))
+    from predictive_metrics import evaluate_trial, PredictiveHistory, SENSORS
+
 
 class BagExtractor:
     """Collect trial-aligned fields from the package's ROS topics."""
 
-    def __init__(self, yolo_stride: int = 12, meta_stride: int = 3):
+    def __init__(self, yolo_stride: int = 12, meta_stride: int = 12,
+                 min_variance: float = 1.e-8):
         self.yolo_stride = yolo_stride
         self.meta_stride = meta_stride
         self.trials: Dict[int, Dict[str, object]] = {}
@@ -46,6 +59,58 @@ class BagExtractor:
         self.posterior_covariance_queue = deque()
         self.final_adaptation_summary = None
         self.prior_operations_by_stamp = {}
+        self.atomic_prior_operations = set()
+        self.min_variance = min_variance
+        self.predictive_inputs = {}
+        self.predictive_results = {}
+        self.predictive_errors = []
+
+    @staticmethod
+    def _predictive_key(record):
+        return (int(record["operation_id"]), int(record["prior_stamp_ns"]), record["frame_id"])
+
+    def _register_prior_stamp(self, operation_id, stamp):
+        operations = self.prior_operations_by_stamp.setdefault(stamp, [])
+        if operation_id not in operations:
+            operations.append(operation_id)
+
+    def _assign_predictive_result(self, result):
+        row = self._trial(result["operation_id"])
+        row["bottle_id"] = result.get("bottle_id", -1)
+        row["prior_stamp_ns"] = result["prior_stamp_ns"]
+        row["learning_sample_count_before_trial"] = result.get("learning_sample_count_before_trial")
+        row["observation_status"] = result["observation_status"]
+        for source, values in result.get("sources", {}).items():
+            self._assign_vector(row, source, values["raw_mean"])
+            self._assign_vector(row, "source_" + source, values["corrected_mean"])
+            self._assign_covariance(row, "source_" + source + "_cov", values["covariance"])
+        for model, prior in result.get("priors", {}).items():
+            prefix = "pred" if model == "adaptive" else "fixed_pred"
+            self._assign_vector(row, prefix, prior["mean"])
+            self._assign_covariance(row, prefix + "_cov", prior["covariance"])
+        for sensor, scores in result["scores"].items():
+            row["predictive_" + sensor + "_status"] = scores["status"]
+            score = scores["trial_score"]
+            if score is not None:
+                row["delta_nll_" + sensor] = score["delta_nll"]
+                for model in ("adaptive", "fixed"):
+                    row["nll_" + model + "_" + sensor] = score[model]["nll"]
+                    row["error_" + model + "_" + sensor + "_m"] = score[model]["position_error_m"]
+
+    def finalize_predictive_evaluation(self):
+        """Recover scores from atomic inputs when a live result was not recorded."""
+        for key, snapshot in self.predictive_inputs.items():
+            if key not in self.predictive_results:
+                try:
+                    self.predictive_results[key] = evaluate_trial(snapshot, self.min_variance)
+                except (KeyError, TypeError, ValueError, np.linalg.LinAlgError) as error:
+                    self.predictive_errors.append(str(error))
+        history = PredictiveHistory()
+        for result in sorted(self.predictive_results.values(),
+                             key=lambda value: (value["prior_stamp_ns"], value["operation_id"])):
+            self._assign_predictive_result(result)
+            history.add(result)
+        return history.summary()
 
     def _trial(self, operation_id: int) -> Dict[str, object]:
         return self.trials.setdefault(
@@ -108,6 +173,18 @@ class BagExtractor:
     def consume(self, topic, message, bag_time):
         timestamp = float(bag_time.to_sec())
 
+        if topic in {"/predictive_evaluation_input", "/predictive_evaluation"}:
+            try:
+                record = json.loads(message.data)
+                key = self._predictive_key(record)
+                if topic == "/predictive_evaluation_input":
+                    self.predictive_inputs[key] = record
+                else:
+                    self.predictive_results[key] = record
+            except (KeyError, TypeError, ValueError) as error:
+                self.predictive_errors.append(str(error))
+            return
+
         if topic == "/P_current":
             values = np.asarray(message.data, dtype=float)
             if values.size >= 4 and np.all(np.isfinite(values[1:4])):
@@ -137,17 +214,20 @@ class BagExtractor:
                 return
             self.active_operation_id = operation_id
             stamp = message.header.stamp.to_nsec()
-            self.prior_operations_by_stamp.setdefault(stamp, []).append(operation_id)
+            self._register_prior_stamp(operation_id, stamp)
             row = self._trial(operation_id)
             row["prior_time_s"] = timestamp
-            self._assign_vector(row, "pred", self._position(message))
+            if operation_id not in self.atomic_prior_operations:
+                self._assign_vector(row, "pred", self._position(message))
             if self.pending_current is not None:
-                self._assign_vector(row, "current", self.pending_current)
+                if operation_id not in self.atomic_prior_operations:
+                    self._assign_vector(row, "current", self.pending_current)
+                    row["bottle_id"] = self.pending_bottle_id
                 self.pending_current = None
-                row["bottle_id"] = self.pending_bottle_id
                 self.pending_bottle_id = None
             if self.pending_tf is not None:
-                self._assign_vector(row, "tf", self.pending_tf)
+                if operation_id not in self.atomic_prior_operations:
+                    self._assign_vector(row, "tf", self.pending_tf)
                 self.pending_tf = None
             self.prior_covariance_queue.append(operation_id)
             return
@@ -155,6 +235,19 @@ class BagExtractor:
         if topic == "/P_pred_context":
             row = self._trial(message.operation_id)
             row["bottle_id"] = int(message.bottle_id)
+            # Old bag schemas/tests may only contain source hypotheses.
+            if hasattr(message, "position") and hasattr(message, "covariance"):
+                self.atomic_prior_operations.add(message.operation_id)
+                self.active_operation_id = message.operation_id
+                self._assign_vector(row, "pred", [message.position.x, message.position.y, message.position.z])
+                self._assign_covariance(row, "pred_cov", message.covariance)
+                row.setdefault("prior_time_s", timestamp)
+                self._register_prior_stamp(message.operation_id, message.header.stamp.to_nsec())
+            if getattr(message, "fixed_prior_available", False):
+                point = message.fixed_position
+                self._assign_vector(row, "fixed_pred", [point.x, point.y, point.z])
+                self._assign_covariance(row, "fixed_pred_cov", message.fixed_covariance)
+                row["learning_sample_count_before_trial"] = message.learning_sample_count
             for name in ("raw_current", "raw_tf", "current", "tf"):
                 point = getattr(message, name + "_position")
                 self._assign_vector(row, "source_" + name, [point.x, point.y, point.z])
@@ -168,9 +261,10 @@ class BagExtractor:
         if topic == "/Sigma_pred":
             if self.prior_covariance_queue and len(message.data) == 9:
                 operation_id = self.prior_covariance_queue.popleft()
-                self._assign_covariance(
-                    self._trial(operation_id), "pred_cov", message.data
-                )
+                if operation_id not in self.atomic_prior_operations:
+                    self._assign_covariance(
+                        self._trial(operation_id), "pred_cov", message.data
+                    )
             return
 
         if topic == "/P_place":
@@ -366,6 +460,45 @@ def learning_csv_rows(rows):
     return output
 
 
+def predictive_csv_rows(results):
+    """One row per Place operation and sensor, including unscored trials."""
+    rows = []
+    for result in results:
+        for sensor in SENSORS:
+            data = result["sensors"][sensor]
+            scores = result["scores"][sensor]
+            row = {
+                "operation_id": result["operation_id"],
+                "bottle_id": result.get("bottle_id", -1),
+                "prior_stamp_ns": result["prior_stamp_ns"],
+                "frame_id": result["frame_id"],
+                "sensor": sensor,
+                "learning_sample_count_before_trial": result.get("learning_sample_count_before_trial"),
+                "observation_status": result["observation_status"],
+                "evaluation_status": scores["status"],
+                "quality_candidate_count": scores["quality_candidate_count"],
+                "observation_received": data["received"],
+                "sensor_enabled": data["enabled"],
+                "algorithm_selected_index": data["algorithm_selected_index"],
+                "selected_for_feedback": data["selected_for_feedback"],
+                "target_identity_verified": False,
+                "error_independence_verified": False,
+                "priors": result.get("priors", {}),
+                "quality_candidates": data["quality_candidates"],
+                "candidate_scores": scores["candidate_scores"],
+                "selected_diagnostic": scores["selected_diagnostic"],
+            }
+            score = scores["trial_score"]
+            if score is not None:
+                row["delta_nll"] = score["delta_nll"]
+                row["delta_squared_error_m2"] = score["delta_squared_error_m2"]
+                for model in ("adaptive", "fixed"):
+                    for name, value in score[model].items():
+                        row[model + "_" + name] = value
+            rows.append(row)
+    return rows
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description=(
@@ -375,7 +508,8 @@ def parse_arguments():
     parser.add_argument("bag", help="input .bag file")
     parser.add_argument("output_directory", help="directory for CSV/JSON output")
     parser.add_argument("--yolo-stride", type=int, default=12)
-    parser.add_argument("--meta-stride", type=int, default=3)
+    parser.add_argument("--meta-stride", type=int, default=12,
+                        help="Meta record length; use 3 for legacy XYZ-only bags")
     parser.add_argument("--current-min-variance", type=float, default=1.0e-8)
     parser.add_argument("--bias-stability-tolerance", type=float, default=0.002)
     parser.add_argument("--stable-updates", type=int, default=3)
@@ -400,7 +534,8 @@ def main():
     if arguments.stable_updates <= 0:
         raise SystemExit("--stable-updates must be positive")
 
-    extractor = BagExtractor(arguments.yolo_stride, arguments.meta_stride)
+    extractor = BagExtractor(arguments.yolo_stride, arguments.meta_stride,
+                             arguments.current_min_variance)
     topics = [
         "/P_current", "/P_tf", "/P_pred", "/Sigma_pred",
         "/P_pred_context", "/observation_reference_distances",
@@ -411,12 +546,14 @@ def main():
         "/kl_adaptation_summary", "/learned_bias_current",
         "/learned_bias_tf", "/learned_covariance_current",
         "/learned_covariance_tf",
+        "/predictive_evaluation_input", "/predictive_evaluation",
     ]
     with rosbag.Bag(arguments.bag, "r") as bag:
         for topic, message, bag_time in bag.read_messages(topics=topics):
             extractor.consume(topic, message, bag_time)
 
     output_directory = Path(arguments.output_directory)
+    predictive_summary = extractor.finalize_predictive_evaluation()
     output_directory.mkdir(parents=True, exist_ok=True)
     trials = sorted(
         extractor.trials.values(), key=lambda row: int(row["operation_id"])
@@ -429,6 +566,11 @@ def main():
         output_directory / "learning_history.csv",
         learning_csv_rows(learning),
     )
+    write_dictionary_csv(
+        output_directory / "predictive_evaluation.csv",
+        predictive_csv_rows(sorted(extractor.predictive_results.values(),
+                                   key=lambda value: (value["prior_stamp_ns"], value["operation_id"]))),
+    )
     report = build_parameter_report(
         trials,
         learning,
@@ -438,6 +580,13 @@ def main():
     )
     report["source_bag"] = str(Path(arguments.bag).resolve())
     report["final_adaptation_summary"] = extractor.final_adaptation_summary
+    report["predictive_evaluation"] = predictive_summary
+    if not extractor.predictive_results:
+        report["warnings"].append(
+            "No atomic predictive snapshots/results were recorded; sensor NLL is unavailable."
+        )
+    report["warnings"].extend("Predictive evaluation: " + error
+                              for error in extractor.predictive_errors)
     unmatched_learning = [
         row["operation_id"] for row in learning
         if extractor.trials.get(row["operation_id"], {}).get("used_x") is None

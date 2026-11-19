@@ -44,6 +44,7 @@ python3 analysis/preliminary_experiment_analyzer.py \
 preliminary_01_analysis/
 ├── trials.csv
 ├── learning_history.csv
+├── predictive_evaluation.csv
 └── parameter_report.json
 ```
 
@@ -61,6 +62,26 @@ preliminary_01_analysis/
 - 選択観測から事前・Current・TFそれぞれへの距離（`/observation_reference_distances`）
 - KL、平均位置差、累積平均、EMA
 - 入力候補数・メッセージ数
+- 固定モデルの事前分布、事前生成時の学習数、センサ別NLLと対応差
+
+### `predictive_evaluation.csv`
+
+1 Place試行×1センサにつき1行です。MetaとRealSenseを分けて、評価状態、
+固定・適応NLL、`delta_nll = fixed - adaptive`、位置誤差、較正診断を保存します。
+正の差はその観測で適応モデルの予測が良いことを表します。候補位置・共分散、
+両事前、全候補のスコア、選択依存の診断値もJSON列として保持します。
+
+品質条件を通る候補が一つの場合を集計し、複数候補は`ambiguous_candidates`、
+未観測は`no_observation`としてNLLを欠測にします。事前ゲート外の候補も品質条件を
+満たせば評価対象になります。一意な候補でも対象ボトルとの対応は未検証です。
+センサ誤差との独立性・共分散校正も別途確認が必要です。
+
+`/predictive_evaluation_input`だけ記録されていても、解析時にスコアを復元できます。
+ライブ結果もある場合は重複集計しません。古いbagで両トピックともない場合は
+NLLを生成せず、レポートに不足を記載します。既存bag・学習状態は書き換えません。
+
+現在のMeta配列は1候補12要素が既定です。旧XYZ形式のbagを解析するときは
+`--meta-stride 3`を指定してください。
 
 ### `learning_history.csv`
 
@@ -82,6 +103,8 @@ preliminary_01_analysis/
 - バイアス更新が安定した可能性のあるサンプル数
 - ゲートや共分散上限のP95診断候補
 - 試行数に対する主要トピックの記録数（`data_completeness`）
+- `predictive_evaluation`：センサ別の対応NLL差、位置誤差、取得・評価可能率、
+  欠測理由、共分散下限到達、名目95%被覆率
 
 ## 4. 解釈上の注意
 

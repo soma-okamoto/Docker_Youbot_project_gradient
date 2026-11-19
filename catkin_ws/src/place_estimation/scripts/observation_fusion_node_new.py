@@ -56,6 +56,7 @@ config/local_registration_thresholds.yamlから設定する。
 
 import threading
 import copy
+import json
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -100,6 +101,12 @@ class ObservationFusionNode:
         )
         self.used_observation_topic = rospy.get_param(
             "~used_observation_topic", "/used_physical_observation"
+        )
+        self.publish_predictive_snapshot = bool(
+            rospy.get_param("~publish_predictive_snapshot", False)
+        )
+        self.predictive_snapshot_topic = rospy.get_param(
+            "~predictive_snapshot_topic", "/predictive_evaluation_input"
         )
         self.distance_topic = rospy.get_param(
             "~distance_topic", "/observation_distances"
@@ -412,6 +419,7 @@ class ObservationFusionNode:
         self.pending_cov: Optional[np.ndarray] = None
         self.pending_bottle_id: Optional[int] = None
         self.pending_prior_sources = {}
+        self.pending_prediction_snapshot = None
 
         # ================================================================
         # Active operation
@@ -424,6 +432,7 @@ class ObservationFusionNode:
         self.prior_cov: Optional[np.ndarray] = None
         self.prior_header = None
         self.prior_sources = {}
+        self.prediction_snapshot = None
 
         self.yolo_received = False
         self.meta_received = False
@@ -460,6 +469,11 @@ class ObservationFusionNode:
             PoseWithCovarianceStamped,
             queue_size=10,
         )
+        self.predictive_snapshot_pub = None
+        if self.publish_predictive_snapshot:
+            self.predictive_snapshot_pub = rospy.Publisher(
+                self.predictive_snapshot_topic, String, queue_size=10,
+            )
         self.distance_pub = rospy.Publisher(
             self.distance_topic,
             Float32MultiArray,
@@ -862,12 +876,53 @@ class ObservationFusionNode:
         except (ValueError, np.linalg.LinAlgError) as error:
             rospy.logerr_throttle(2.0, "Invalid prior context: %s", error)
             return
-        self._accept_prior_with_sources(message, sources)
+        self._accept_prior_with_sources(
+            message, sources, self._prediction_snapshot_from_context(message)
+        )
+
+    def _prediction_snapshot_from_context(self, message):
+        """Copy evaluation data without making it an operational input."""
+        if not self.publish_predictive_snapshot:
+            return None
+        try:
+            def point(value):
+                return [float(value.x), float(value.y), float(value.z)]
+
+            snapshot = {
+                "schema_version": 1,
+                "operation_id": int(message.operation_id),
+                "bottle_id": int(message.bottle_id),
+                "frame_id": message.header.frame_id,
+                "prior_stamp_ns": int(message.header.stamp.to_nsec()),
+                "learning_sample_count_before_trial": getattr(message, "learning_sample_count", None),
+                "priors": {"adaptive": {
+                    "mean": point(message.position),
+                    "covariance": list(message.covariance),
+                    "ci_weight_current": getattr(message, "ci_weight_current", None),
+                }},
+                "sources": {},
+            }
+            for source in ("current", "tf"):
+                snapshot["sources"][source] = {
+                    "raw_mean": point(getattr(message, "raw_" + source + "_position")),
+                    "corrected_mean": point(getattr(message, source + "_position")),
+                    "covariance": list(getattr(message, source + "_covariance")),
+                }
+            if getattr(message, "fixed_prior_available", False):
+                snapshot["priors"]["fixed"] = {
+                    "mean": point(message.fixed_position),
+                    "covariance": list(message.fixed_covariance),
+                    "ci_weight_current": message.fixed_ci_weight_current,
+                }
+            return snapshot
+        except (AttributeError, TypeError, ValueError) as error:
+            rospy.logerr_throttle(2.0, "Cannot snapshot predictive priors: %s", error)
+            return None
 
     def _pred_with_id_cb(self, message) -> None:
         self._accept_prior_with_sources(message, {})
 
-    def _accept_prior_with_sources(self, message, sources) -> None:
+    def _accept_prior_with_sources(self, message, sources, prediction_snapshot=None) -> None:
         position = np.array([message.position.x, message.position.y, message.position.z], dtype=float)
         covariance = np.asarray(message.covariance, dtype=float)
         if ((self.enable_bottle_id and message.bottle_id < 0) or not self._valid_position(position)
@@ -888,6 +943,7 @@ class ObservationFusionNode:
             self.pending_pred_header = copy.deepcopy(message.header)
             self.pending_bottle_id = int(message.bottle_id)
             self.pending_prior_sources = sources
+            self.pending_prediction_snapshot = prediction_snapshot
             self._try_start_locked()
 
     def _pred_cb(self, message: PoseStamped) -> None:
@@ -961,12 +1017,14 @@ class ObservationFusionNode:
             name: (position.copy(), covariance.copy())
             for name, (position, covariance) in self.pending_prior_sources.items()
         }
+        self.prediction_snapshot = copy.deepcopy(self.pending_prediction_snapshot)
 
         self.pending_pred = None
         self.pending_cov = None
         self.pending_pred_header = None
         self.pending_bottle_id = None
         self.pending_prior_sources = {}
+        self.pending_prediction_snapshot = None
 
         self.yolo_received = False
         self.meta_received = False
@@ -1704,6 +1762,8 @@ class ObservationFusionNode:
         yolo_scores = np.empty(0, dtype=float)
         meta_distances = np.empty(0, dtype=float)
         meta_scores = np.empty(0, dtype=float)
+        status = "fusion_error_prior_used"
+        selected_sensors = []
 
         try:
             self._summarize_stream_candidates("yolo")
@@ -1948,6 +2008,9 @@ class ObservationFusionNode:
             )
 
         except (ValueError, np.linalg.LinAlgError) as error:
+            status = "fusion_error_prior_used"
+            selected_sensors = []
+            yolo_index = meta_index = -1
             rospy.logerr(
                 "Fusion failed: %s. Prior is published unchanged.",
                 error,
@@ -1969,7 +2032,61 @@ class ObservationFusionNode:
                 used_observation_covariance=None,
             )
         finally:
+            self._publish_predictive_snapshot(
+                trigger, status, yolo_index, meta_index, selected_sensors
+            )
             self._reset_locked()
+
+    def _publish_predictive_snapshot(self, trigger, status, yolo_index,
+                                     meta_index, selected_sensors):
+        """Publish quality candidates before distance gates, with frozen priors.
+
+        This runs independently of operational success/fallback. Failures here
+        cannot replace a Place result or change error-learning feedback.
+        """
+        if self.predictive_snapshot_pub is None:
+            return
+        if self.prediction_snapshot is None:
+            rospy.logwarn_throttle(
+                2.0, "Predictive evaluation requires an atomic PriorContext"
+            )
+            return
+        try:
+            snapshot = copy.deepcopy(self.prediction_snapshot)
+            snapshot["trigger"] = trigger
+            snapshot["observation_status"] = status
+            snapshot["sensors"] = {}
+            for source, sensor, index in (("yolo", "realsense", yolo_index),
+                                           ("meta", "meta", meta_index)):
+                candidates = getattr(self, source + "_candidates")
+                covariances = getattr(self, source + "_covariances")
+                quality = []
+                for candidate_index, (position, covariance) in enumerate(zip(candidates, covariances)):
+                    covariance = self._stable_covariance(
+                        covariance, getattr(self, "max_std_" + source)
+                    )
+                    if covariance is not None and self._valid_position(position):
+                        quality.append({
+                            "index": candidate_index,
+                            "mean": position.tolist(),
+                            "covariance": covariance.reshape(-1).tolist(),
+                        })
+                snapshot["sensors"][sensor] = {
+                    "enabled": bool(getattr(self, "enable_" + source)),
+                    "received": bool(getattr(self, source + "_received")),
+                    "input_mode": getattr(self, source + "_input_mode"),
+                    "frame_count": len(getattr(self, source + "_frames")),
+                    "representative_candidate_count": len(candidates),
+                    "quality_candidates": quality,
+                    "algorithm_selected_index": int(index),
+                    "selected_for_feedback": source in selected_sensors,
+                }
+            self.predictive_snapshot_pub.publish(
+                String(data=json.dumps(snapshot, allow_nan=False, sort_keys=True))
+            )
+        except Exception as error:
+            # Diagnostics must not interrupt the reset or the next operation.
+            rospy.logerr_throttle(2.0, "Predictive snapshot failed: %s", error)
 
     @staticmethod
     def _distance_text(value: float) -> str:
@@ -2123,6 +2240,7 @@ class ObservationFusionNode:
         self.prior_cov = None
         self.prior_header = None
         self.prior_sources = {}
+        self.prediction_snapshot = None
         self.yolo_received = False
         self.meta_received = False
         self.yolo_candidates = []

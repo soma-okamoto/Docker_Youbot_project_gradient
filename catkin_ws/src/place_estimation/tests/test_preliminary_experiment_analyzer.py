@@ -1,10 +1,13 @@
 """ROS-free checks for sparse physical-observation attribution in bags."""
 import importlib.util
+import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import patch
+
+import test_predictive_metrics as scoring
 
 
 analysis = Path(__file__).resolve().parents[1] / 'analysis'
@@ -72,6 +75,43 @@ class FeedbackAttributionTests(unittest.TestCase):
                 extractor.consume('/P_pred', prior(2, 100), time)
                 extractor.consume('/used_physical_observation', feedback(1, stamp), time)
                 self.assertFalse(any('used_x' in row for row in extractor.trials.values()))
+
+    def test_predictive_input_recovers_scores_without_live_result(self):
+        extractor = analyzer.BagExtractor()
+        data = scoring.snapshot(41)
+        data['sensors']['meta'].update(received=False, quality_candidates=[])
+        extractor.consume('/predictive_evaluation_input', NS(data=json.dumps(data)),
+                          NS(to_sec=lambda: 1.))
+        summary = extractor.finalize_predictive_evaluation()
+        self.assertEqual(summary['trial_count'], 1)
+        self.assertEqual(extractor.trials[41]['delta_nll_realsense'], 0.)
+        self.assertNotIn('delta_nll_meta', extractor.trials[41])
+        rows = analyzer.predictive_csv_rows(extractor.predictive_results.values())
+        self.assertEqual(len(rows), 2)
+        meta = next(row for row in rows if row['sensor'] == 'meta')
+        self.assertEqual(meta['evaluation_status'], 'no_observation')
+        self.assertNotIn('delta_nll', meta)
+
+    def test_atomic_live_result_is_not_duplicated_or_attached_to_active_trial(self):
+        extractor = analyzer.BagExtractor()
+        data = scoring.snapshot(41)
+        result = scoring.metrics.evaluate_trial(data)
+        time = NS(to_sec=lambda: 1.)
+        extractor.consume('/P_pred', prior(42, 4200), time)
+        extractor.consume('/predictive_evaluation_input', NS(data=json.dumps(data)), time)
+        extractor.consume('/predictive_evaluation', NS(data=json.dumps(result)), time)
+        summary = extractor.finalize_predictive_evaluation()
+        self.assertEqual(summary['trial_count'], 1)
+        self.assertEqual(extractor.trials[41]['delta_nll_meta'], 0.)
+        self.assertNotIn('delta_nll_meta', extractor.trials[42])
+
+    def test_context_and_legacy_prior_do_not_duplicate_feedback_stamp(self):
+        extractor = analyzer.BagExtractor()
+        time = NS(to_sec=lambda: 1.)
+        extractor._register_prior_stamp(41, 4100)
+        extractor.consume('/P_pred', prior(41, 4100), time)
+        extractor.consume('/used_physical_observation', feedback(1, 4100), time)
+        self.assertEqual(extractor.trials[41]['used_x'], 1.)
 
 
 if __name__ == '__main__':

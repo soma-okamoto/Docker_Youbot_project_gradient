@@ -305,9 +305,16 @@ flowchart TD
 ```
 
 試行数の上限や終了回数は設定しません。人が実験を終了した時点で、
-最後に記録された`/kl_adaptation_summary`を最終評価として扱います。
+最後に記録された`/kl_adaptation_summary`をKL診断の最終集計として扱います。
 `trend_min_samples`は実験の終了回数ではなく、傾向を判定するための
 最低サンプル数です。
+
+KLは分布更新・不一致の補助指標です。適応成功を意味する従来ラベルは互換性のため
+残していますが、`adaptation_claim_supported: false`を併記します。
+次試行の予測比較には、固定初期パラメータで作る事前と実際の適応事前を保存し、
+`/predictive_evaluation`と`/predictive_evaluation_summary`へセンサ別の対応NLL差を
+出力します。現段階は対象対応・誤差独立性が未検証の代理評価です。
+詳細は[evaluation/README.md](../evaluation/README.md)を参照してください。
 
 ### 学習状態
 

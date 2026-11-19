@@ -22,6 +22,9 @@ place_cov_topic: /Sigma_place
 place_with_id_topic: /P_place_with_id
 status_topic: /observation_status
 used_observation_topic: /used_physical_observation
+# Frozen priors + all quality-valid sensor representatives, before prior gates.
+publish_predictive_snapshot: true
+predictive_snapshot_topic: /predictive_evaluation_input
 
 # [selected YOLO d^2, selected Meta d^2, YOLO-Meta d^2]
 distance_topic: /observation_distances

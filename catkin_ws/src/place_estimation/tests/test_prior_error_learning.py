@@ -65,7 +65,7 @@ class ErrorLearningTests(unittest.TestCase):
         return Node()
 
     def test_bias_and_covariance_are_updated_from_used_observations(self):
-        node = self.node(learning_min_samples=2)
+        node = self.node(learning_min_samples=2, covariance_initial_weight=0.)
         observation_covariance = np.eye(3) * 1.e-4
 
         node.pending_learning_samples[1] = (
@@ -152,6 +152,70 @@ class ErrorLearningTests(unittest.TestCase):
             used_observation(1, [0., 0., 0.], np.eye(3) * 1.e-4)
         )
         self.assertEqual(node.learning_count, 0)
+
+    @staticmethod
+    def learn(node, operation, current_error, tf_error, observation_covariance=None):
+        position = np.array([1., 2., 3.])
+        node.pending_learning_samples[operation] = (
+            position + np.asarray(current_error), position + np.asarray(tf_error)
+        )
+        node.pending_learning_stamps[operation] = operation
+        node._used_observation_callback(used_observation(
+            operation, position,
+            np.eye(3) * 1.e-4 if observation_covariance is None else observation_covariance,
+        ))
+
+    def test_warmup_learns_bias_but_keeps_startup_covariance_for_nine_updates(self):
+        node = self.node()
+        self.assertEqual(node.learning_min_samples, 10)
+        self.assertEqual(node.covariance_initial_weight, .5)
+        current_cov, tf_cov = node.cov_current.copy(), node.cov_tf.copy()
+        for operation in range(1, 10):
+            self.learn(node, operation, [.02, -.03, .01], [-.01, .04, .02])
+            np.testing.assert_allclose(node.bias_current, [.02, -.03, .01])
+            np.testing.assert_allclose(node.bias_tf, [-.01, .04, .02])
+            np.testing.assert_array_equal(node.cov_current, current_cov)
+            np.testing.assert_array_equal(node.cov_tf, tf_cov)
+
+    def test_tenth_update_blends_and_prevents_degenerate_error_overconfidence(self):
+        node = self.node(ci_fixed_weight=.85)
+        initial_current, initial_tf = node.initial_cov_current.copy(), node.initial_cov_tf.copy()
+        for operation in range(1, 11):
+            self.learn(node, operation, [.02, -.03, .01], [-.01, .04, .02])
+        # Identical error samples give negative noise-subtracted variance.
+        # Repair it before mixing, so 50% startup uncertainty remains in every direction.
+        np.testing.assert_allclose(node.cov_current, .5*initial_current + .5*node.min_variance*np.eye(3))
+        np.testing.assert_allclose(node.cov_tf, .5*initial_tf + .5*node.min_variance*np.eye(3))
+        np.testing.assert_array_equal(node.initial_cov_current, initial_current)
+        np.testing.assert_array_equal(node.initial_cov_tf, initial_tf)
+        self.assertFalse(node.initial_cov_current.flags.writeable)
+        self.assertFalse(node.initial_cov_tf.flags.writeable)
+        _, prior_cov, _ = node._ci_fusion(np.zeros(3), node.cov_current,
+                                         np.zeros(3), node.cov_tf)
+        self.assertGreater(np.min(np.linalg.eigvalsh(prior_cov)), 1.e-4)
+        published = node.learned_covariance_current_pub.publish.call_args.args[0]
+        np.testing.assert_allclose(np.array(published.data[2:]).reshape(3, 3), node.cov_current)
+
+    def test_blending_retains_startup_uncertainty_for_correlated_indefinite_estimate(self):
+        node = self.node()
+        raw = np.array([[.01, .02, 0.], [.02, .01, 0.], [0., 0., -1.]])
+        stabilized = node._stabilize_learned_covariance(raw, node.initial_cov_tf)
+        self.assertGreaterEqual(np.min(np.linalg.eigvalsh(stabilized - .5*node.initial_cov_tf)), -1.e-12)
+        self.assertTrue(np.all(np.isfinite(stabilized)))
+
+    def test_initial_weight_one_keeps_covariance_while_bias_still_learns(self):
+        node = self.node(learning_min_samples=2, covariance_initial_weight=1.)
+        initial_current, initial_tf = node.cov_current.copy(), node.cov_tf.copy()
+        for operation in (1, 2):
+            self.learn(node, operation, [.1, 0., 0.], [-.1, 0., 0.])
+        np.testing.assert_allclose(node.bias_current, [.1, 0., 0.])
+        np.testing.assert_allclose(node.cov_current, initial_current)
+        np.testing.assert_allclose(node.cov_tf, initial_tf)
+
+    def test_invalid_covariance_initial_weights_are_rejected(self):
+        for weight in (-.01, 1.01, float('nan'), float('inf')):
+            with self.subTest(weight=weight), self.assertRaises(ValueError):
+                self.node(covariance_initial_weight=weight)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "experiment": "preliminary_09",
+  "role": "comparison_baseline",
+  "archived_at_utc": "2026-11-20T05:35:36.748702+00:00",
+  "source_bag": "DataSaved/preliminary_09.bag",
+  "sha256": {
+    "preliminary_09.bag": "2c9027902a62526f8cbc529748d2b98031e2107a0882b5c6635df9e116db993e",
+    "preliminary_09_analysis/learning_history.csv": "a53804d694b643e3d552180026ba9ca2c3aa796bc709c2315f4f9772c8c60249",
+    "preliminary_09_analysis/parameter_report.json": "8512b05cb1156fd80749d04e018dd2390c7d2dc1dd34437212347c884cf6f23d",
+    "preliminary_09_analysis/predictive_evaluation.csv": "cca7df07d60aaf063b77a66de87fc73e36d56510fc215e903dcaaaa5bbcdc8c3",
+    "preliminary_09_analysis/trials.csv": "143ec9c41add4c4b0c5bdf556d199751a4cdc02f2e4f558cba36d8f4692c5b88"
+  },
+  "startup_configuration_recorded": false,
+  "confirmed_from_bag": {
+    "prior_ci_weights_current": [
+      0.85
+    ]
+  },
+  "notes": [
+    "Original bag and analysis copied unchanged; hashes verified.",
+    "This bag predates automatic startup-configuration capture. Unrecorded settings and exact source version remain unknown.",
+    "Current YAML settings are not substituted for the historical experiment settings."
+  ]
+}

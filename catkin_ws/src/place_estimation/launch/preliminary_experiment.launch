@@ -27,5 +27,14 @@
               /predictive_evaluation_input /predictive_evaluation
               /predictive_evaluation_summary
               /kl_evaluation /kl_evaluation_status
-              /kl_adaptation_summary" />
+              /kl_adaptation_summary
+              /experiment_configuration" />
+
+  <node pkg="place_estimation"
+        type="experiment_configuration_recorder.py"
+        name="experiment_configuration_recorder"
+        output="screen"
+        required="true">
+    <param name="output_bag" value="$(arg output_bag)" />
+  </node>
 </launch>

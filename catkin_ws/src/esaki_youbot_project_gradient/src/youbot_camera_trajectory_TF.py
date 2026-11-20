@@ -93,6 +93,21 @@ class YoubotCameraArmController:
 
         self.base_frame = "base_footprint"
 
+        # /P_tf配信位置への加算補正 [m]（base_frameの各軸）。起動時に読む。
+        # 例: _p_tf_offset_z:=-0.02 で配信する高さを2 cm下げる。
+        self.p_tf_offset = np.array([
+            float(rospy.get_param("~p_tf_offset_x", 0.0)),
+            float(rospy.get_param("~p_tf_offset_y", 0.0)),
+            float(rospy.get_param("~p_tf_offset_z", 0.0)),
+        ], dtype=np.float64)
+        if not np.all(np.isfinite(self.p_tf_offset)):
+            raise ValueError("~p_tf_offset_x/y/z must be finite [m]")
+        rospy.loginfo(
+            "P_tf position offset in %s [m]: dx=%+.4f, dy=%+.4f, dz=%+.4f",
+            self.base_frame,
+            *self.p_tf_offset
+        )
+
         # Arm1側はTipでOK
         self.arm1_ee_frame = "gripper_tip"
 
@@ -657,16 +672,21 @@ class YoubotCameraArmController:
             return
 
         self.place_ee_pose = ee_pose
-        self.place_ee_pub.publish(ee_pose)
-        
+        # 元のEE姿勢を保持し、配信用コピーの位置だけを補正する。
+        p_tf_pose = copy.deepcopy(ee_pose)
+        p_tf_pose.pose.position.x += self.p_tf_offset[0]
+        p_tf_pose.pose.position.y += self.p_tf_offset[1]
+        p_tf_pose.pose.position.z += self.p_tf_offset[2]
+        self.place_ee_pub.publish(p_tf_pose)
+
         sa = np.zeros(3, dtype=np.float64)
 
-        sa[0] = self.p_current[0] - float(ee_pose.pose.position.x)
-        sa[1] = self.p_current[1] - float(ee_pose.pose.position.y)
-        sa[2] = self.p_current[2] - float(ee_pose.pose.position.z)
+        sa[0] = self.p_current[0] - float(p_tf_pose.pose.position.x)
+        sa[1] = self.p_current[1] - float(p_tf_pose.pose.position.y)
+        sa[2] = self.p_current[2] - float(p_tf_pose.pose.position.z)
 
         rospy.loginfo(
-            "P_current - EE: dx=%.3f, dy=%.3f, dz=%.3f",
+            "P_current - P_tf: dx=%.3f, dy=%.3f, dz=%.3f",
             sa[0],
             sa[1],
             sa[2]

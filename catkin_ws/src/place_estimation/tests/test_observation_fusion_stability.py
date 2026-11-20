@@ -48,6 +48,8 @@ class StabilityTests(unittest.TestCase):
         # the prior. Keep them inside a wide gate; gate-specific cases below
         # explicitly use the production default (25).
         settings = {'~meta_message_type': 'float32_multi_array',
+                    '~wait_full_observation_window': False,
+                    '~min_observation_frames': 3,
                     '~candidate_gate_yolo': 20000., '~candidate_gate_meta': 20000.}
         settings.update({'~' + k: v for k, v in params.items()})
         rospy.get_param = lambda name, default=None: settings.get(name, default)
@@ -376,6 +378,7 @@ class StabilityTests(unittest.TestCase):
         node = self.node(enable_yolo=True)
         node._yolo_array_cb(SimpleNamespace(data=record(0., np.full((3, 3), np.nan))))
         node._meta_array_cb(SimpleNamespace(data=[1., 0., 0.]))
+        node._timeout_cb(None)
         out = node._publish.call_args.kwargs
         self.assertEqual(out['status'], 'meta_only')
 
@@ -434,6 +437,7 @@ class StabilityTests(unittest.TestCase):
 
     def test_stream_detection_ratio_is_enforced(self):
         node = self.node(enable_yolo=False, meta_input_mode='stream',
+                         wait_full_observation_window=True,
                          min_observation_frames=3, min_detection_ratio=.6)
         for x in (1., 1.01, .99):
             node._meta_array_cb(SimpleNamespace(data=[x, 0., 0.]))
@@ -450,6 +454,7 @@ class StabilityTests(unittest.TestCase):
         node._meta_array_cb(SimpleNamespace(data=[1., 2., 3.]))
         self.assertFalse(node.meta_received)
         node._meta_array_cb(SimpleNamespace(data=[]))
+        node._timeout_cb(None)
         self.assertEqual(node._publish.call_args.kwargs['status'], 'no_valid_observation')
 
     def test_meta_covariance_configuration_is_validated(self):

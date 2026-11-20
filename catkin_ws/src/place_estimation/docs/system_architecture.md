@@ -12,6 +12,8 @@ roslaunch place_estimation place_estimation_pipeline.launch
 
 予備実験では、同じパイプラインと必要な全トピックのbag記録をまとめて
 起動する`preliminary_experiment.launch`を使用します。
+同launchは起動時パラメータとコード・設定のスナップショットも保存します。
+保存内容と実験9の比較基準データは[analysis/README.md](../analysis/README.md)を参照してください。
 
 ## 1. システム全体像
 
@@ -155,12 +157,13 @@ sequenceDiagram
     U->>P: /P_current
     R->>P: /P_tf
     P->>P: 学習済みバイアスで補正
-    P->>P: trace最小化CIで事前分布生成
+    P->>P: 設定されたCI係数で事前分布生成
     P->>F: /P_pred, /Sigma_pred
     P->>K: /P_pred, /Sigma_pred
 
-    F->>F: observation_timeoutの観測窓を開始
+    F->>F: observation_timeoutの観測窓を開始（最大5秒）
     S->>F: /P_yolo, /P_meta
+    F->>F: 両方が有効なら早期確定、片方だけなら期限まで待機
     F->>F: 候補安定性・共分散・整合性を評価
     F->>F: 事前を含むCI または 物理観測のみのCI
     F->>U: /P_place, /Sigma_place
@@ -187,7 +190,7 @@ flowchart LR
     RAW["今回の生入力<br/>P_current, P_tf"]
     USED["採用物理観測<br/>z_used, R_used"]
     ERR["誤差<br/>e = P_source - z_used"]
-    LEARN["逐次更新<br/>平均誤差 = bias<br/>標本共分散 - 平均R_used"]
+    LEARN["逐次更新<br/>平均誤差 = bias<br/>誤差共分散を正定値化し初期共分散と混合"]
     NEXT["次試行<br/>P_source - bias<br/>学習済み共分散"]
 
     RAW --> ERR
@@ -201,7 +204,12 @@ flowchart LR
 - 物理観測が採用された試行だけを学習に使用します。
 - 観測なし、または競合により事前へ戻った試行では学習しません。
 - バイアスは物理観測を1回採用した後から更新します。
-- 共分散は`learning_min_samples`以上から更新します。
+- 共分散は`learning_min_samples`（既定10採用）以上から更新します。
+  それまでは初期共分散を維持し、バイアスは各採用後に更新します。
+- 更新時は`標本共分散 - 平均R_used`を正定値化してから、
+  `covariance_initial_weight`（既定0.5）の割合で初期共分散を混ぜます。
+  `使用共分散 = 0.5 × 正定値化した学習共分散 + 0.5 × 初期共分散`となり、
+  少数サンプルから不確かさを過小評価することを抑えます。
 - 学習値は現在メモリ上にだけ保持され、ノード再起動時に初期化されます。
 - 更新のたびに学習サンプル数、バイアス、共分散を診断トピックへ
   ラッチ配信するため、予備実験bagから学習履歴を復元できます。
@@ -336,15 +344,22 @@ KLは分布更新・不一致の補助指標です。適応成功を意味する
 |---|---|
 | 学習の有効／無効 | `enable_error_learning` |
 | 共分散学習開始までの最低採用数 | `learning_min_samples` |
+| 学習共分散に混ぜる初期共分散の割合（0〜1） | `covariance_initial_weight` |
 | 初期バイアス | `bias_current`、`bias_tf` |
 | 初期標準偏差 | `sigma_current`、`sigma_tf` |
 | 完全な3x3初期共分散 | `covariance_current`、`covariance_tf` |
 | 事前CIの重み決定 | `ci_weight_mode` |
+| 固定時のCurrent側CI係数（TF側は1から引いた値） | `ci_fixed_weight` |
 | CI探索刻み | `ci_weight_step` |
 | CI目的関数 | `ci_objective` |
 | 共分散固有値の下限 | `min_variance` |
 
-通常設定では`ci_weight_mode: optimize`、`ci_objective: trace`です。
+現在の既定設定は`ci_weight_mode: fixed`、`ci_fixed_weight: 0.85`で、
+Current側のCI係数を0.85、TF側を0.15に固定しています。
+位置の寄与率には各共分散も効くため、単純な85:15の位置平均にはなりません。
+初期共分散ではCurrentの寄与率はXYが約48%、Zが約67%です。
+学習後の共分散に応じて、この寄与率は変わります。
+`ci_weight_mode: optimize`へ戻すと、`ci_objective`（既定は`trace`）による探索を行います。
 
 ### 8.2 センサ入力形式・固定センサ誤差・観測CI
 
@@ -377,11 +392,18 @@ KLは分布更新・不一致の補助指標です。適応成功を意味する
 | すべての参照から遠すぎる候補を棄却する距離 | `candidate_gate_yolo`、`candidate_gate_meta` |
 | YOLO–Meta整合閾値 | `gate_yolo_meta` |
 | 競合時に不確かさを同等とみなす範囲 | `uncertainty_trace_relative_tolerance`、`uncertainty_trace_absolute_tolerance` |
-| 観測窓の長さ | `observation_timeout` |
+| 最大待機時間（既定5秒） | `observation_timeout` |
+| 観測が揃っても観測窓の終了まで待つ | `wait_full_observation_window` |
 | 安定候補に必要な最低フレーム数 | `min_observation_frames` |
 | 最低検出継続率 | `min_detection_ratio` |
 | フレーム間ばらつき上限 | `max_frame_position_std_yolo`、`max_frame_position_std_meta` |
 | フレーム間の候補対応距離 | `candidate_association_distance` |
+
+現在は`wait_full_observation_window: false`です。YOLOとMetaの両方が
+品質・安定性・距離ゲートを通れば5秒より前でも確定します。
+待機中の新しい有効なpriorは前操作をキャンセルし、前操作の結果は返しません。
+最低観測枚数は`min_observation_frames: 2`です。Metaは同じ候補を2枚以上で
+検出し、時間方向のばらつきも含めて評価します。検出率60%と距離ゲートは維持します。
 
 このファイルの値は現在すべて暫定値です。実験で変更する場合は、
 ノードのPythonコードではなく、このファイルを編集します。
@@ -515,8 +537,9 @@ rosrun place_estimation preliminary_experiment_analyzer.py \
 ## 11. 現在の注意点
 
 - Config内の共分散、ゲート、安定性閾値は実験前の暫定値です。
-- 特に`min_variance: 1.0e-8`と`learning_min_samples: 2`は、
-  実験結果に基づいて再設定する必要があります。
+- 現在は`learning_min_samples: 10`、`covariance_initial_weight: 0.5`で
+  共分散学習を安定化しています。`min_variance: 1.0e-8`は数値上の下限です。
+  これらは次の実験でNLL・観測採用率・位置差を比較して再評価してください。
 - 学習状態はROSノードを終了すると失われます。
 - KLの低下は事前分布と観測後分布が近づいたことを表しますが、
   独立した真値に対する精度向上を直接証明するものではありません。

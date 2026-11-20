@@ -172,9 +172,14 @@ class KLEvaluationNode:
         if not np.all(np.isfinite(position)):
             self._publish_error(f"{distribution} position contains NaN/Inf")
             return
+        stamp_ns = message.header.stamp.to_nsec()
+        if stamp_ns <= 0:
+            self._publish_error(f"{distribution} pose requires a nonzero prior timestamp")
+            return
+        key = (message.header.frame_id, stamp_ns)
         with self.lock:
             self.pose_queues[distribution].append(
-                (int(message.header.seq), position)
+                (key, int(message.header.seq), position)
             )
             self._form_distribution_locked(distribution)
 
@@ -193,31 +198,34 @@ class KLEvaluationNode:
         poses = self.pose_queues[distribution]
         covariances = self.covariance_queues[distribution]
         while poses and covariances:
-            operation_id, position = poses.popleft()
+            key, operation_id, position = poses.popleft()
             covariance = covariances.popleft()
-            self.distributions[distribution][operation_id] = (
-                position, covariance
+            self.distributions[distribution][key] = (
+                operation_id, position, covariance
             )
             self._trim_pending_locked(distribution)
-            self._evaluate_if_ready_locked(operation_id)
+            self._evaluate_if_ready_locked(key)
 
     def _trim_pending_locked(self, distribution):
         pending = self.distributions[distribution]
         while len(pending) > self.max_pending_operations:
-            del pending[min(pending)]
+            del pending[next(iter(pending))]
 
-    def _evaluate_if_ready_locked(self, operation_id):
+    def _evaluate_if_ready_locked(self, key):
         if (
-            operation_id not in self.distributions["prior"]
-            or operation_id not in self.distributions["posterior"]
+            key not in self.distributions["prior"]
+            or key not in self.distributions["posterior"]
         ):
             return
-        prior_mean, prior_covariance = self.distributions["prior"].pop(
-            operation_id
+        # rospy numbers each publisher independently. Cancelling a Place leaves
+        # a prior without a posterior, so output seq no longer identifies it.
+        # The posterior echoes the prior timestamp; retain the prior's ID.
+        operation_id, prior_mean, prior_covariance = self.distributions["prior"].pop(
+            key
         )
-        posterior_mean, posterior_covariance = self.distributions[
+        _, posterior_mean, posterior_covariance = self.distributions[
             "posterior"
-        ].pop(operation_id)
+        ].pop(key)
         try:
             metrics = evaluate_prior_posterior(
                 prior_mean,

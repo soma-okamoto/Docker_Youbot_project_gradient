@@ -31,10 +31,14 @@ uncertainty_trace_relative_tolerance: 0.10
 uncertainty_trace_absolute_tolerance: 1.0e-6
 
 # Observation collection window [s]
-observation_timeout: 3.0
+observation_timeout: 5.0
+# Finish early once all enabled sensors have valid observations.
+# A new prior cancels the previous operation without publishing its result.
+wait_full_observation_window: false
 
 # Multi-frame association and stability
-min_observation_frames: 3
+# Require two detections to estimate temporal sample covariance.
+min_observation_frames: 2
 min_detection_ratio: 0.60
 max_frame_position_std_yolo: 0.10
 max_frame_position_std_meta: 0.10

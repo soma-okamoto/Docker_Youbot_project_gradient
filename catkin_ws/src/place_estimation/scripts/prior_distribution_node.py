@@ -140,13 +140,21 @@ class PriorDistributionNode:
             rospy.get_param("~enable_error_learning", True)
         )
         self.learning_min_samples = int(
-            rospy.get_param("~learning_min_samples", 2)
+            rospy.get_param("~learning_min_samples", 10)
+        )
+        # Retain this fraction of the startup uncertainty after learning starts.
+        # 0 reproduces the unblended estimate; 1 keeps startup covariance.
+        self.covariance_initial_weight = float(
+            rospy.get_param("~covariance_initial_weight", 0.5)
         )
         self.max_pending_learning_operations = int(
             rospy.get_param("~max_pending_learning_operations", 100)
         )
         if self.learning_min_samples < 2:
             raise ValueError("~learning_min_samples must be at least 2")
+        if (not np.isfinite(self.covariance_initial_weight)
+                or not 0.0 <= self.covariance_initial_weight <= 1.0):
+            raise ValueError("~covariance_initial_weight must be finite and in [0, 1]")
         if self.max_pending_learning_operations <= 0:
             raise ValueError(
                 "~max_pending_learning_operations must be positive"
@@ -241,6 +249,10 @@ class PriorDistributionNode:
         rospy.loginfo("bias_tf      = %s", self.bias_tf)
         rospy.loginfo("cov_current =\n%s", self.cov_current)
         rospy.loginfo("cov_tf      =\n%s", self.cov_tf)
+        rospy.loginfo(
+            "Error learning: enabled=%s, learning_min_samples=%d, covariance_initial_weight=%.3f",
+            self.enable_error_learning, self.learning_min_samples, self.covariance_initial_weight,
+        )
 
     def _validate_settings(self) -> None:
         if self.weight_mode not in ("optimize", "fixed"):
@@ -325,6 +337,17 @@ class PriorDistributionNode:
             eigenvectors
             @ np.diag(eigenvalues)
             @ eigenvectors.T
+        )
+
+    def _stabilize_learned_covariance(self, covariance, initial_covariance):
+        """Blend a PSD learned estimate with immutable startup uncertainty."""
+        # Repair the noise-subtracted estimate before blending: negative sample
+        # eigenvalues must not cancel the retained startup covariance.
+        learned = self._regularize_covariance(covariance)
+        initial_weight = self.covariance_initial_weight
+        return self._regularize_covariance(
+            (1.0 - initial_weight) * learned
+            + initial_weight * initial_covariance
         )
 
     @staticmethod
@@ -677,22 +700,25 @@ class PriorDistributionNode:
                 sample_covariance_tf = (
                     self.error_m2_tf / float(self.learning_count - 1)
                 )
-                self.cov_current = self._regularize_covariance(
-                    sample_covariance_current - average_used_covariance
+                self.cov_current = self._stabilize_learned_covariance(
+                    sample_covariance_current - average_used_covariance,
+                    self.initial_cov_current,
                 )
-                self.cov_tf = self._regularize_covariance(
-                    sample_covariance_tf - average_used_covariance
+                self.cov_tf = self._stabilize_learned_covariance(
+                    sample_covariance_tf - average_used_covariance,
+                    self.initial_cov_tf,
                 )
 
             self._publish_learning_state(operation_id)
 
             rospy.loginfo(
                 "Learned operation error from seq=%d: n=%d, "
-                "bias_current=%s, bias_tf=%s",
+                "bias_current=%s, bias_tf=%s, covariance=%s",
                 operation_id,
                 self.learning_count,
                 np.array2string(self.bias_current, precision=6),
                 np.array2string(self.bias_tf, precision=6),
+                "blended" if self.learning_count >= self.learning_min_samples else "startup",
             )
 
     @staticmethod

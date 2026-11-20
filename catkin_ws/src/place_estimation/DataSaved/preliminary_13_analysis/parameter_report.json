@@ -1,0 +1,551 @@
+{
+  "current_min_variance_m2": 1e-08,
+  "data_completeness": {
+    "KL_evaluation": 38,
+    "P_current": 39,
+    "P_tf": 39,
+    "posterior_distribution": 38,
+    "prior_distribution": 39
+  },
+  "distributions": {
+    "kl_prior_to_posterior": {
+      "count": 38,
+      "maximum": 248.6779585071387,
+      "mean": 53.60108146074891,
+      "minimum": 0.0,
+      "p05": 0.0,
+      "p50": 57.16860718030888,
+      "p90": 120.37657340887773,
+      "p95": 145.52890467163218,
+      "p99": 217.50753463255072,
+      "sample_std": 61.095537414513544
+    },
+    "mean_shift_m": {
+      "count": 38,
+      "maximum": 0.14229810999780435,
+      "mean": 0.026708063553681338,
+      "minimum": 0.0,
+      "p05": 0.0,
+      "p50": 0.015526932354932903,
+      "p90": 0.0767193272471152,
+      "p95": 0.08600264189966104,
+      "p99": 0.12216143458045467,
+      "sample_std": 0.03422154978973241
+    },
+    "selected_meta_d2": {
+      "count": 2,
+      "maximum": 1.6519876718521118,
+      "mean": 1.153246134519577,
+      "minimum": 0.6545045971870422,
+      "p05": 0.7043787509202957,
+      "p50": 1.153246134519577,
+      "p90": 1.552239364385605,
+      "p95": 1.6021135181188584,
+      "p99": 1.642012841105461,
+      "sample_std": 0.705327046214478
+    },
+    "selected_yolo_d2": {
+      "count": 20,
+      "maximum": 13.206865310668945,
+      "mean": 2.1556762624531984,
+      "minimum": 0.10134752839803696,
+      "p05": 0.16867233403027057,
+      "p50": 0.8062357604503632,
+      "p90": 4.0201765537261975,
+      "p95": 5.1332442283630435,
+      "p99": 11.592141094207753,
+      "sample_std": 2.9899541741141498
+    },
+    "selected_yolo_meta_d2": {
+      "count": 2,
+      "maximum": 11.645891189575195,
+      "mean": 7.921340227127075,
+      "minimum": 4.196789264678955,
+      "p05": 4.569244360923767,
+      "p50": 7.921340227127075,
+      "p90": 10.900980997085572,
+      "p95": 11.273436093330384,
+      "p99": 11.571400170326234,
+      "sample_std": 5.267310484843896
+    },
+    "used_observation_principal_std_m": {
+      "count": 20,
+      "maximum": 0.01001588753739566,
+      "mean": 0.009874530957369135,
+      "minimum": 0.008381339645256313,
+      "p05": 0.009040002178402878,
+      "p50": 0.010000326380482392,
+      "p90": 0.010004721159361888,
+      "p95": 0.01000599486068545,
+      "p99": 0.010013909002053619,
+      "sample_std": 0.0004079320308894007
+    },
+    "yolo_candidate_principal_std_m": {
+      "count": 22,
+      "maximum": 0.010015887537395657,
+      "mean": 0.010002061393815681,
+      "minimum": 0.010000107557548632,
+      "p05": 0.010000145143334317,
+      "p50": 0.010000375319907422,
+      "p90": 0.010005390523031479,
+      "p95": 0.010009798082032432,
+      "p99": 0.010014656542116425,
+      "sample_std": 3.9015091569770834e-06
+    }
+  },
+  "experiment_configurations": [
+    {
+      "capture_errors": [],
+      "captured_at_utc": "2026-11-20T06:26:56.957826+00:00",
+      "git_revision": null,
+      "git_tracked_files_modified": null,
+      "recording_id": "c2c01cbe64e44e309188c2e3d1e42cf0",
+      "runtime_parameters": {
+        "/distribution_visualization_node": {
+          "marker_lifetime": 0.0,
+          "marker_topic": "/place_distribution_markers",
+          "min_axis": 0.002,
+          "posterior_color": [
+            1.0,
+            0.25,
+            0.15,
+            0.35
+          ],
+          "posterior_cov_topic": "/Sigma_place",
+          "posterior_pose_topic": "/P_place",
+          "prior_color": [
+            0.15,
+            0.45,
+            1.0,
+            0.35
+          ],
+          "prior_cov_topic": "/Sigma_pred",
+          "prior_pose_topic": "/P_pred",
+          "sigma_scale": 2.0
+        },
+        "/kl_evaluation_node": {
+          "ema_alpha": 0.2,
+          "expected_frame": "base_footprint",
+          "max_pending_operations": 100,
+          "metrics_topic": "/kl_evaluation",
+          "normalized_slope_threshold": 0.02,
+          "posterior_cov_topic": "/Sigma_place",
+          "posterior_pose_topic": "/P_place",
+          "prior_cov_topic": "/Sigma_pred",
+          "prior_pose_topic": "/P_pred",
+          "relative_change_threshold": 0.1,
+          "status_topic": "/kl_evaluation_status",
+          "summary_topic": "/kl_adaptation_summary",
+          "trend_min_samples": 6,
+          "trend_window_size": 3
+        },
+        "/observation_fusion_node_multi_new": {
+          "bias_meta": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "bias_yolo": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "both_weights": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "candidate_association_distance": 0.1,
+          "candidate_gate_meta": 25.0,
+          "candidate_gate_yolo": 25.0,
+          "distance_topic": "/observation_distances",
+          "enable_bottle_id": true,
+          "enable_yolo": true,
+          "expected_frame": "base_footprint",
+          "gate_meta": 7.815,
+          "gate_yolo": 7.815,
+          "gate_yolo_meta": 7.815,
+          "max_frame_position_std_meta": 0.1,
+          "max_frame_position_std_yolo": 0.1,
+          "max_meta_candidates": 200,
+          "max_std_meta": 0.1,
+          "max_std_yolo": 0.1,
+          "max_yolo_candidates": 200,
+          "meta_candidate_stride": 12,
+          "meta_covariance_indices": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "meta_distances_topic": "/meta_candidate_distances",
+          "meta_input_mode": "stream",
+          "meta_message_type": "float32_multi_array",
+          "meta_scores_topic": "/meta_candidate_scores",
+          "meta_selected_index_topic": "/meta_selected_index",
+          "meta_topic": "/P_meta",
+          "meta_xyz_indices": [
+            0,
+            1,
+            2
+          ],
+          "min_detection_ratio": 0.6,
+          "min_observation_frames": 2,
+          "min_variance": 1e-08,
+          "observation_ci_objective": "trace",
+          "observation_ci_weight_mode": "optimize",
+          "observation_ci_weight_step": 0.01,
+          "observation_timeout": 5.0,
+          "output_frame": "base_footprint",
+          "place_cov_topic": "/Sigma_place",
+          "place_topic": "/P_place",
+          "place_with_id_topic": "/P_place_with_id",
+          "pred_cov_topic": "/Sigma_pred",
+          "pred_topic": "/P_pred",
+          "pred_with_id_topic": "/P_pred_with_id",
+          "predictive_snapshot_topic": "/predictive_evaluation_input",
+          "prior_context_topic": "/P_pred_context",
+          "publish_predictive_snapshot": true,
+          "reference_distances_topic": "/observation_reference_distances",
+          "sigma_meta": [
+            0.02,
+            0.02,
+            0.03
+          ],
+          "sigma_yolo": [
+            0.03,
+            0.03,
+            0.04
+          ],
+          "single_weight_prior": 0.5,
+          "status_topic": "/observation_status",
+          "uncertainty_trace_absolute_tolerance": 1e-06,
+          "uncertainty_trace_relative_tolerance": 0.1,
+          "use_prior_source_guard": true,
+          "used_observation_topic": "/used_physical_observation",
+          "wait_full_observation_window": false,
+          "yolo_candidate_stride": 12,
+          "yolo_covariance_indices": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "yolo_distances_topic": "/yolo_candidate_distances",
+          "yolo_input_mode": "packed",
+          "yolo_scores_topic": "/yolo_candidate_scores",
+          "yolo_selected_index_topic": "/yolo_selected_index",
+          "yolo_topic": "/P_yolo",
+          "yolo_xyz_indices": [
+            0,
+            1,
+            2
+          ]
+        },
+        "/predictive_evaluation_node": {
+          "expected_frame": "base_footprint",
+          "input_topic": "/predictive_evaluation_input",
+          "max_completed_operations": 1000,
+          "metrics_topic": "/predictive_evaluation",
+          "min_variance": 1e-08,
+          "summary_topic": "/predictive_evaluation_summary",
+          "summary_window_size": 10
+        },
+        "/prior_distribution_node": {
+          "bias_current": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "bias_tf": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "ci_fixed_weight": 0.85,
+          "ci_objective": "trace",
+          "ci_weight_max": 1.0,
+          "ci_weight_min": 0.0,
+          "ci_weight_mode": "fixed",
+          "ci_weight_step": 0.01,
+          "cov_topic": "/Sigma_pred",
+          "covariance_initial_weight": 0.5,
+          "current_topic": "/P_current",
+          "enable_bottle_id": true,
+          "enable_error_learning": true,
+          "expected_frame": "base_footprint",
+          "learned_bias_current_topic": "/learned_bias_current",
+          "learned_bias_tf_topic": "/learned_bias_tf",
+          "learned_covariance_current_topic": "/learned_covariance_current",
+          "learned_covariance_tf_topic": "/learned_covariance_tf",
+          "learning_min_samples": 10,
+          "learning_sample_count_topic": "/learning_sample_count",
+          "max_pending_learning_operations": 100,
+          "min_variance": 1e-08,
+          "output_frame": "base_footprint",
+          "pred_topic": "/P_pred",
+          "pred_with_id_topic": "/P_pred_with_id",
+          "prior_context_topic": "/P_pred_context",
+          "publish_prior_context": true,
+          "sigma_current": [
+            0.05,
+            0.05,
+            0.05
+          ],
+          "sigma_tf": [
+            0.02,
+            0.02,
+            0.03
+          ],
+          "tf_topic": "/P_tf",
+          "used_observation_topic": "/used_physical_observation"
+        },
+        "/track_P_meta": null,
+        "/youbot_camera_trajectory_publisher": {
+          "p_tf_offset_z": -0.14
+        }
+      }
+    }
+  ],
+  "final_adaptation_summary": {
+    "adaptation_claim_supported": false,
+    "adaptation_state": "worsening",
+    "covariance_component_trend": {
+      "count": 38,
+      "first": 0.0,
+      "initial_window_mean": 39.1877234516642,
+      "latest": 58.90729998833447,
+      "maximum": 82.73346358608441,
+      "minimum": 0.0,
+      "normalized_recent_slope": 0.004290807240929988,
+      "overall_change": "worsened",
+      "recent_direction": "flat",
+      "recent_slope_per_trial": 0.2518889990832349,
+      "recent_window_mean": 58.70433812091744,
+      "relative_improvement": -0.49802879448523885,
+      "slope_per_trial": 0.4314489774475752
+    },
+    "interpretation": "prior_posterior_disagreement_only",
+    "kl_trend": {
+      "count": 38,
+      "first": 0.0,
+      "initial_window_mean": 61.664625640688136,
+      "latest": 63.507848011841936,
+      "maximum": 248.6779585071387,
+      "minimum": 0.0,
+      "normalized_recent_slope": -0.22324805256433933,
+      "overall_change": "worsened",
+      "recent_direction": "decreasing",
+      "recent_slope_per_trial": -19.62324325169209,
+      "recent_window_mean": 87.89883282872866,
+      "relative_improvement": -0.42543365690572554,
+      "slope_per_trial": 0.7550814327503209
+    },
+    "latest": {
+      "covariance_component": 58.90729998833447,
+      "kl_prior_to_posterior": 63.507848011841936,
+      "mean_component": 4.600548023507465,
+      "mean_shift_m": 0.020559841363804076
+    },
+    "latest_operation_id": 39,
+    "mean_component_trend": {
+      "count": 38,
+      "first": 0.0,
+      "initial_window_mean": 22.476902189023935,
+      "latest": 4.600548023507465,
+      "maximum": 204.11773332165728,
+      "minimum": 0.0,
+      "normalized_recent_slope": -0.680783567233913,
+      "overall_change": "worsened",
+      "recent_direction": "decreasing",
+      "recent_slope_per_trial": -19.875132250775327,
+      "recent_window_mean": 29.194494707811234,
+      "relative_improvement": -0.2988664746722828,
+      "slope_per_trial": 0.32363245530274565
+    },
+    "mean_shift_trend": {
+      "count": 38,
+      "first": 0.0,
+      "initial_window_mean": 0.027123905855614413,
+      "latest": 0.020559841363804076,
+      "maximum": 0.14229810999780435,
+      "minimum": 0.0,
+      "normalized_recent_slope": -0.6143741456472661,
+      "overall_change": "worsened",
+      "recent_direction": "decreasing",
+      "recent_slope_per_trial": -0.0301408045320505,
+      "recent_window_mean": 0.04905936349306503,
+      "relative_improvement": -0.8087130870538015,
+      "slope_per_trial": 0.00044572060459619416
+    },
+    "sample_count": 38,
+    "schema_version": 1
+  },
+  "learned_covariance_eigenvalues_m2": {
+    "count": 120,
+    "maximum": 0.0029368411284672697,
+    "mean": 0.0014689833372828868,
+    "minimum": 0.00030383306228484746,
+    "p05": 0.00039835384050637907,
+    "p50": 0.0015078300367322008,
+    "p90": 0.0025000000000000005,
+    "p95": 0.0025018287337284484,
+    "p99": 0.0027881132219032627,
+    "sample_std": 0.0008682970916805611
+  },
+  "learning_update_count": 20,
+  "min_variance_floor_hit_count": 0,
+  "operation_error_repeatability": {
+    "current_minus_used_observation": {
+      "count": 20,
+      "mean": [
+        -0.041688192250371,
+        0.0009596332472929181,
+        0.0032271685575669964
+      ],
+      "sample_covariance": [
+        [
+          0.002263741744249132,
+          -0.00013203464744134736,
+          -0.000228916832686204
+        ],
+        [
+          -0.00013203464744134736,
+          0.0007673697403989846,
+          0.0004879403548202586
+        ],
+        [
+          -0.000228916832686204,
+          0.0004879403548202586,
+          0.0014956257285786724
+        ]
+      ],
+      "sample_std": [
+        0.04757879511136376,
+        0.027701439319988135,
+        0.038673320630360566
+      ]
+    },
+    "tf_minus_used_observation": {
+      "count": 20,
+      "mean": [
+        0.0009806240775976026,
+        0.039690565284999306,
+        0.04760182751192256
+      ],
+      "sample_covariance": [
+        [
+          0.0005485686144020865,
+          -6.825493639059481e-05,
+          0.0002044687865924422
+        ],
+        [
+          -6.825493639059481e-05,
+          0.0009507053836211495,
+          0.0006928796917991006
+        ],
+        [
+          0.0002044687865924422,
+          0.0006928796917991006,
+          0.002374255588807444
+        ]
+      ],
+      "sample_std": [
+        0.023421541674323802,
+        0.030833510724877722,
+        0.048726333627797644
+      ]
+    }
+  },
+  "parameter_candidates": {
+    "bias_stability_tolerance_m": 0.002,
+    "gate_meta_p95_diagnostic": 1.6021135181188584,
+    "gate_yolo_meta_p95_diagnostic": 11.273436093330384,
+    "gate_yolo_p95_diagnostic": 5.1332442283630435,
+    "learning_min_samples_stability_candidate": null,
+    "max_std_yolo_p95_m_diagnostic": 0.010009798082032432,
+    "stable_updates_required": 3
+  },
+  "predictive_evaluation": {
+    "interpretation": "paired_sensor_prediction_surrogate_unverified_target_and_independence",
+    "latest_learning_sample_count_before_trial": 19,
+    "latest_operation_id": 39,
+    "schema_version": 1,
+    "sensors": {
+      "meta": {
+        "adaptive_floor_hit_trials": 0,
+        "adaptive_mean_mahalanobis_squared": 1.1532461325452887,
+        "adaptive_observation_rmse_m": 0.036724135762657845,
+        "adaptive_predictive_coverage_95": 1.0,
+        "cumulative_delta_nll": 0.7253359070985201,
+        "enabled_trials": 38,
+        "fixed_floor_hit_trials": 0,
+        "fixed_mean_mahalanobis_squared": 1.4704211025894602,
+        "fixed_observation_rmse_m": 0.046051902329652075,
+        "fixed_predictive_coverage_95": 1.0,
+        "mean_adaptive_nll": -6.524953892868288,
+        "mean_delta_nll": 0.36266795354926007,
+        "mean_fixed_nll": -6.162285939319029,
+        "observation_received_rate": 0.868421052631579,
+        "positive_delta_trials": 2,
+        "received_trials": 33,
+        "recent_mean_delta_nll": 0.36266795354926007,
+        "scored_trial_rate": 0.05263157894736842,
+        "scored_trials": 2,
+        "status_counts": {
+          "no_observation": 5,
+          "no_quality_candidate": 31,
+          "scored_unverified_target": 2
+        }
+      },
+      "realsense": {
+        "adaptive_floor_hit_trials": 0,
+        "adaptive_mean_mahalanobis_squared": 4.345793997615104,
+        "adaptive_observation_rmse_m": 0.07988726855265116,
+        "adaptive_predictive_coverage_95": 0.9,
+        "cumulative_delta_nll": 2.4665191305522214,
+        "enabled_trials": 38,
+        "fixed_floor_hit_trials": 0,
+        "fixed_mean_mahalanobis_squared": 4.428499338353758,
+        "fixed_observation_rmse_m": 0.08272006335642772,
+        "fixed_predictive_coverage_95": 0.9,
+        "mean_adaptive_nll": -4.7959775768133275,
+        "mean_delta_nll": 0.12332595652761107,
+        "mean_fixed_nll": -4.6726516202857145,
+        "observation_received_rate": 1.0,
+        "positive_delta_trials": 13,
+        "received_trials": 38,
+        "recent_mean_delta_nll": 0.24675288330054163,
+        "scored_trial_rate": 0.5263157894736842,
+        "scored_trials": 20,
+        "status_counts": {
+          "ambiguous_candidates": 1,
+          "no_quality_candidate": 17,
+          "scored_unverified_target": 20
+        }
+      }
+    },
+    "trial_count": 38,
+    "window_size": 10
+  },
+  "schema_version": 1,
+  "source_bag": "/root/catkin_ws/src/place_estimation/DataSaved/preliminary_13.bag",
+  "trial_count": 39,
+  "warnings": [
+    "These values describe repeatability and internal consistency; they do not measure absolute accuracy without ground truth.",
+    "P95 values are diagnostic candidates only. Freeze parameters using separate calibration data before the main experiment.",
+    "Distance distributions are affected by the current covariance and candidate-selection settings.",
+    "The recorded bias history did not establish a learning_min_samples candidate.",
+    "Some trial records are incomplete for: posterior_distribution, KL_evaluation. Wait until rosbag reports 'Recording to' before the first trial."
+  ]
+}

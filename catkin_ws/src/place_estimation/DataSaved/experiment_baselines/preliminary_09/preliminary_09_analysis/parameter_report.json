@@ -1,0 +1,328 @@
+{
+  "current_min_variance_m2": 1e-08,
+  "data_completeness": {
+    "KL_evaluation": 28,
+    "P_current": 35,
+    "P_tf": 35,
+    "posterior_distribution": 28,
+    "prior_distribution": 35
+  },
+  "distributions": {
+    "kl_prior_to_posterior": {
+      "count": 28,
+      "maximum": 627.6688804042177,
+      "mean": 65.00433890287366,
+      "minimum": 0.0,
+      "p05": 0.0,
+      "p50": 15.923216116269082,
+      "p90": 122.61261690130297,
+      "p95": 334.12714399062025,
+      "p99": 578.4937064684132,
+      "sample_std": 140.6829706570498
+    },
+    "mean_shift_m": {
+      "count": 28,
+      "maximum": 0.19427807901036623,
+      "mean": 0.029628095755784838,
+      "minimum": 0.0,
+      "p05": 0.0,
+      "p50": 0.015633171971327513,
+      "p90": 0.07284838278128444,
+      "p95": 0.11553446589474448,
+      "p99": 0.17847506630216955,
+      "sample_std": 0.045693686549470584
+    },
+    "selected_meta_d2": {
+      "count": 7,
+      "maximum": 2706.62353515625,
+      "mean": 438.3020205157144,
+      "minimum": 0.5990378856658936,
+      "p05": 2.099011778831482,
+      "p50": 71.73836517333984,
+      "p90": 1178.2236114501961,
+      "p95": 1942.4235733032208,
+      "p99": 2553.7835427856435,
+      "sample_std": 1001.8849174809187
+    },
+    "selected_yolo_d2": {
+      "count": 13,
+      "maximum": 1082.0628662109375,
+      "mean": 89.12995453866628,
+      "minimum": 0.17111985385417938,
+      "p05": 0.6667478144168855,
+      "p50": 5.370131492614746,
+      "p90": 23.733334732055674,
+      "p95": 448.4210952758774,
+      "p99": 955.3345120239247,
+      "sample_std": 298.4276689495268
+    },
+    "selected_yolo_meta_d2": {
+      "count": 3,
+      "maximum": 286.6423034667969,
+      "mean": 104.49533462524414,
+      "minimum": 10.153909683227539,
+      "p05": 10.807497787475587,
+      "p50": 16.689790725708008,
+      "p90": 232.6518009185791,
+      "p95": 259.64705219268797,
+      "p99": 281.2432532119751,
+      "sample_std": 157.77774915644648
+    },
+    "used_observation_principal_std_m": {
+      "count": 16,
+      "maximum": 0.010959264135648294,
+      "mean": 0.009340007315465967,
+      "minimum": 0.006012785643677946,
+      "p05": 0.006293782832822871,
+      "p50": 0.010000423987687086,
+      "p90": 0.010033298062941513,
+      "p95": 0.010271641051225707,
+      "p99": 0.010821739518763777,
+      "sample_std": 0.001434643269742044
+    },
+    "yolo_candidate_principal_std_m": {
+      "count": 24,
+      "maximum": 0.011381004919734488,
+      "mean": 0.010082454351510147,
+      "minimum": 0.010000191244611868,
+      "p05": 0.010000224127445825,
+      "p50": 0.01000078344638275,
+      "p90": 0.010064586172979988,
+      "p95": 0.01027655587774305,
+      "p99": 0.011135557245788793,
+      "sample_std": 0.00028413641639254175
+    }
+  },
+  "final_adaptation_summary": {
+    "adaptation_claim_supported": false,
+    "adaptation_state": "adapting",
+    "covariance_component_trend": {
+      "count": 28,
+      "first": 58.77613697121974,
+      "initial_window_mean": 42.512039260280325,
+      "latest": 0.0,
+      "maximum": 58.77804329856389,
+      "minimum": 0.0,
+      "normalized_recent_slope": -1.5,
+      "overall_change": "improved",
+      "recent_direction": "decreasing",
+      "recent_slope_per_trial": -9.234529267114079,
+      "recent_window_mean": 6.156352844742719,
+      "relative_improvement": 0.8551856614769666,
+      "slope_per_trial": -0.7592241210954668
+    },
+    "interpretation": "prior_posterior_disagreement_only",
+    "kl_trend": {
+      "count": 28,
+      "first": 85.8748521442216,
+      "initial_window_mean": 54.07379173751941,
+      "latest": 0.0,
+      "maximum": 627.6688804042177,
+      "minimum": 0.0,
+      "normalized_recent_slope": -1.5,
+      "overall_change": "improved",
+      "recent_direction": "decreasing",
+      "recent_slope_per_trial": -39.86570701891054,
+      "recent_window_mean": 26.577138012607026,
+      "relative_improvement": 0.5085024157060114,
+      "slope_per_trial": -2.9454577428516657
+    },
+    "latest": {
+      "covariance_component": 0.0,
+      "kl_prior_to_posterior": 0.0,
+      "mean_component": 0.0,
+      "mean_shift_m": 0.0
+    },
+    "latest_operation_id": 35,
+    "mean_component_trend": {
+      "count": 28,
+      "first": 27.098715173001864,
+      "initial_window_mean": 11.561752477239077,
+      "latest": 0.0,
+      "maximum": 620.6383531674538,
+      "minimum": 0.0,
+      "normalized_recent_slope": -1.5,
+      "overall_change": "worsened",
+      "recent_direction": "decreasing",
+      "recent_slope_per_trial": -30.631177751796464,
+      "recent_window_mean": 20.42078516786431,
+      "relative_improvement": -0.766236148721007,
+      "slope_per_trial": -2.186233621756198
+    },
+    "mean_shift_trend": {
+      "count": 28,
+      "first": 0.0382868468476815,
+      "initial_window_mean": 0.025112714033805175,
+      "latest": 0.0,
+      "maximum": 0.19427807901036623,
+      "minimum": 0.0,
+      "normalized_recent_slope": -1.5,
+      "overall_change": "improved",
+      "recent_direction": "decreasing",
+      "recent_slope_per_trial": -0.029625671947094232,
+      "recent_window_mean": 0.019750447964729488,
+      "relative_improvement": 0.21352793894986172,
+      "slope_per_trial": -0.0010662920968257223
+    },
+    "sample_count": 28,
+    "schema_version": 1
+  },
+  "learned_covariance_eigenvalues_m2": {
+    "count": 96,
+    "maximum": 0.0025000000000000005,
+    "mean": 0.00037515454701920846,
+    "minimum": 9.999999999979013e-09,
+    "p05": 9.999999999993634e-09,
+    "p50": 0.00014286950283352824,
+    "p90": 0.0009947185801354448,
+    "p95": 0.0014479354549721368,
+    "p99": 0.0025000000000000005,
+    "sample_std": 0.0005507148230864802
+  },
+  "learning_update_count": 16,
+  "min_variance_floor_hit_count": 18,
+  "operation_error_repeatability": {
+    "current_minus_used_observation": {
+      "count": 16,
+      "mean": [
+        -0.042970814586927496,
+        -0.01137872723241647,
+        -0.010043978147829572
+      ],
+      "sample_covariance": [
+        [
+          0.0010981411406247878,
+          -0.00034675727679575065,
+          -8.819036010256995e-05
+        ],
+        [
+          -0.00034675727679575065,
+          0.0010318792855390348,
+          0.0006737461464413928
+        ],
+        [
+          -8.819036010256995e-05,
+          0.0006737461464413928,
+          0.0007466253770410112
+        ]
+      ],
+      "sample_std": [
+        0.03313821269508643,
+        0.032122877914953926,
+        0.02732444650932588
+      ]
+    },
+    "tf_minus_used_observation": {
+      "count": 16,
+      "mean": [
+        -0.007791001336394798,
+        0.025633270158008092,
+        0.034399200141924435
+      ],
+      "sample_covariance": [
+        [
+          0.0002604106842658154,
+          0.00013552090628119641,
+          1.9271947480388376e-05
+        ],
+        [
+          0.00013552090628119641,
+          0.0006965312119111488,
+          0.00043243190823821006
+        ],
+        [
+          1.9271947480388376e-05,
+          0.00043243190823821006,
+          0.0004888850289216612
+        ]
+      ],
+      "sample_std": [
+        0.016137245250222088,
+        0.026391877764023325,
+        0.02211074464873721
+      ]
+    }
+  },
+  "parameter_candidates": {
+    "bias_stability_tolerance_m": 0.002,
+    "gate_meta_p95_diagnostic": 1942.4235733032208,
+    "gate_yolo_meta_p95_diagnostic": 259.64705219268797,
+    "gate_yolo_p95_diagnostic": 448.4210952758774,
+    "learning_min_samples_stability_candidate": null,
+    "max_std_yolo_p95_m_diagnostic": 0.01027655587774305,
+    "stable_updates_required": 3
+  },
+  "predictive_evaluation": {
+    "interpretation": "paired_sensor_prediction_surrogate_unverified_target_and_independence",
+    "latest_learning_sample_count_before_trial": 16,
+    "latest_operation_id": 35,
+    "schema_version": 1,
+    "sensors": {
+      "meta": {
+        "adaptive_floor_hit_trials": 0,
+        "adaptive_mean_mahalanobis_squared": 438.30201820183544,
+        "adaptive_observation_rmse_m": 0.10093567230509266,
+        "adaptive_predictive_coverage_95": 0.2857142857142857,
+        "cumulative_delta_nll": -1498.2759460246243,
+        "enabled_trials": 28,
+        "fixed_floor_hit_trials": 0,
+        "fixed_mean_mahalanobis_squared": 1.765083848122071,
+        "fixed_observation_rmse_m": 0.05213038251815811,
+        "fixed_predictive_coverage_95": 0.8571428571428571,
+        "mean_adaptive_nll": 208.0454581095705,
+        "mean_delta_nll": -214.0394208606606,
+        "mean_fixed_nll": -5.993962751090163,
+        "observation_received_rate": 0.8928571428571429,
+        "positive_delta_trials": 2,
+        "received_trials": 25,
+        "recent_mean_delta_nll": -214.0394208606606,
+        "scored_trial_rate": 0.25,
+        "scored_trials": 7,
+        "status_counts": {
+          "no_observation": 3,
+          "no_quality_candidate": 18,
+          "scored_unverified_target": 7
+        }
+      },
+      "realsense": {
+        "adaptive_floor_hit_trials": 2,
+        "adaptive_mean_mahalanobis_squared": 133.95583497547804,
+        "adaptive_observation_rmse_m": 0.13508784905176913,
+        "adaptive_predictive_coverage_95": 0.4166666666666667,
+        "cumulative_delta_nll": -716.0901385814134,
+        "enabled_trials": 28,
+        "fixed_floor_hit_trials": 0,
+        "fixed_mean_mahalanobis_squared": 8.669084366879838,
+        "fixed_observation_rmse_m": 0.11318087830134275,
+        "fixed_predictive_coverage_95": 0.9166666666666666,
+        "mean_adaptive_nll": 57.124374593987994,
+        "mean_delta_nll": -59.674178215117784,
+        "mean_fixed_nll": -2.5498036211297865,
+        "observation_received_rate": 1.0,
+        "positive_delta_trials": 5,
+        "received_trials": 28,
+        "recent_mean_delta_nll": -71.64405552857531,
+        "scored_trial_rate": 0.42857142857142855,
+        "scored_trials": 12,
+        "status_counts": {
+          "ambiguous_candidates": 4,
+          "no_quality_candidate": 12,
+          "scored_unverified_target": 12
+        }
+      }
+    },
+    "trial_count": 28,
+    "window_size": 10
+  },
+  "schema_version": 1,
+  "source_bag": "/root/catkin_ws/src/place_estimation/DataSaved/preliminary_09.bag",
+  "trial_count": 35,
+  "warnings": [
+    "These values describe repeatability and internal consistency; they do not measure absolute accuracy without ground truth.",
+    "P95 values are diagnostic candidates only. Freeze parameters using separate calibration data before the main experiment.",
+    "Distance distributions are affected by the current covariance and candidate-selection settings.",
+    "Learned covariance eigenvalues hit the current floor 18 times; min_variance requires review.",
+    "The recorded bias history did not establish a learning_min_samples candidate.",
+    "Some trial records are incomplete for: posterior_distribution, KL_evaluation. Wait until rosbag reports 'Recording to' before the first trial."
+  ]
+}

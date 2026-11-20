@@ -19,7 +19,12 @@ learning_sample_count_topic: /learning_sample_count
 
 # Sequential operation-error learning
 enable_error_learning: true
-learning_min_samples: 2
+# Keep startup covariance until ten accepted physical observations.
+# Bias still updates after every accepted observation.
+learning_min_samples: 10
+# Learned covariance = (1 - weight) * PSD sample estimate + weight * startup covariance.
+# 0: unblended learning, 1: startup covariance with bias learning only.
+covariance_initial_weight: 0.5
 max_pending_learning_operations: 100
 
 # /P_current has no Header.
@@ -54,8 +59,10 @@ sigma_tf: [0.02, 0.02, 0.03]
 # CI weight
 # optimize: search omega that minimizes trace or determinant
 # fixed: use ci_fixed_weight
-ci_weight_mode: optimize
-ci_fixed_weight: 0.5
+# omega is the Current information weight; TF uses (1 - omega).
+# The resulting position also depends on the two covariance matrices.
+ci_weight_mode: fixed
+ci_fixed_weight: 0.85
 ci_weight_min: 0.0
 ci_weight_max: 1.0
 ci_weight_step: 0.01

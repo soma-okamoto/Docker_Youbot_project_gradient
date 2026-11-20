@@ -70,8 +70,13 @@ predictive errors and correctly calibrated covariance. Those assumptions remain
 unverified, and the outputs explicitly record that fact. Common registration/TF
 errors, temporal correlation, Meta covariance double counting, and the learned
 observation-covariance subtraction still require separate calibration. Nominal
-coverage diagnostics are subject to these same assumptions. The current learning
-equations, minimum sample count and covariance floor are retained.
+coverage diagnostics are subject to these same assumptions. Current defaults
+keep startup covariance through the first nine accepted feedback observations;
+from the tenth, the PSD-repaired noise-subtracted sample estimate is blended
+with 50% immutable startup covariance (`learning_min_samples: 10`,
+`covariance_initial_weight: 0.5`). Bias updates continue after each accepted
+observation. The numerical covariance floor is unchanged. An initial weight of
+1 keeps startup covariance and learns bias only; 0 uses the unblended estimate.
 
 For research claims, establish target correspondence independently, calibrate
 sensor covariance on separate data, and compare user-specific history with
@@ -104,6 +109,12 @@ that update. Overlapping operations retain their actual pre-trial learning count
 This folder is intentionally separated from the position-estimation nodes.
 It evaluates how much the observation result changes the prior distribution;
 it does not affect `P_place`.
+
+Prior and posterior are matched by the echoed nonzero timestamp and frame,
+using the prior's sequence as the reported operation ID. Publisher sequences
+alone cannot match results after a Place has been cancelled: each output
+publisher numbers its own messages. Cancelled operations have no posterior
+and are excluded from KL and predictive scores.
 
 The primary metric is
 

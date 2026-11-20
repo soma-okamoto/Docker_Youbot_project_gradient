@@ -71,6 +71,8 @@ class BottleIdentityTests(unittest.TestCase):
     def setUp(self):
         self.settings = {'~enable_bottle_id': True, '~expected_frame': 'base_footprint',
                          '~output_frame': 'base_footprint', '~ci_weight_mode': 'fixed',
+                         # Timing cases use a separate fake-clock callback test suite.
+                         '~wait_full_observation_window': False,
                          '~enable_yolo': False, '~meta_message_type': 'disabled'}
         self.ros = ModuleType('rospy')
         self.ros.get_param = lambda name, default=None: self.settings.get(name, default)
@@ -140,16 +142,16 @@ class BottleIdentityTests(unittest.TestCase):
         self.assertEqual([r.bottle_id for r in self.results()], [7, 7])
         np.testing.assert_allclose([r.position.x for r in self.results()], [1., 2.])
 
-    def test_new_prior_finalizes_previous_with_previous_id(self):
-        self.fusion.enable_meta = True  # Leave each operation open until timeout/new prior.
+    def test_new_prior_cancels_previous_without_a_result(self):
+        self.fusion.enable_meta = True
         self.feed(7, 1.)
         self.assertEqual(self.results(), [])
         self.feed(12, 2.)
-        self.assertEqual([r.bottle_id for r in self.results()], [7])
+        self.assertEqual(self.results(), [])
         self.assertEqual(self.fusion.bottle_id, 12)
-        self.fusion._timeout_cb(None)
-        self.assertEqual([r.bottle_id for r in self.results()], [7, 12])
-        np.testing.assert_allclose([r.position.x for r in self.results()], [1., 2.])
+        self.fusion._finalize_locked('test')
+        self.assertEqual([r.bottle_id for r in self.results()], [12])
+        np.testing.assert_allclose([r.position.x for r in self.results()], [2.])
         self.assertIsNone(self.fusion.bottle_id)
 
     def test_selected_observation_keeps_manipulated_bottle_id(self):
@@ -232,12 +234,13 @@ class BottleIdentityTests(unittest.TestCase):
         self.enable_guard()
         self.fusion._pred_context_cb(self.guarded_prior(7, 1., 2.))
         self.fusion._pred_context_cb(self.guarded_prior(12, 3., 4.))
-        self.assertEqual(self.results()[0].bottle_id, 7)
+        self.assertEqual(self.results(), [])
         np.testing.assert_allclose(self.fusion.prior_sources['current'][0], [3., 0., 0.])
         self.fusion._yolo_array_cb(Array([1., 0., 0.] + (np.eye(3)*.0004).reshape(-1).tolist()))
+        self.fusion._finalize_locked('test')
         # Observation near the previous Current must be rejected for this operation.
-        self.assertEqual(self.results()[1].bottle_id, 12)
-        self.assertAlmostEqual(self.results()[1].position.x, 4.)
+        self.assertEqual(self.results()[0].bottle_id, 12)
+        self.assertAlmostEqual(self.results()[0].position.x, 4.)
 
     def test_invalid_context_does_not_replace_active_sources(self):
         import copy

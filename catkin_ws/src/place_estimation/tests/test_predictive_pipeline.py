@@ -60,6 +60,7 @@ class PredictivePipelineTests(unittest.TestCase):
         self.h.fusion._yolo_array_cb(identity.Array(
             [5., 0., 0.] + (np.eye(3) * .0001).reshape(-1).tolist()
         ))
+        self.h.fusion._finalize_locked('test')
         self.assertEqual(self.h.fusion.status_pub.publish.call_args.args[0].data,
                          "no_valid_observation")
         self.h.fusion.used_observation_pub.publish.assert_not_called()
@@ -69,6 +70,7 @@ class PredictivePipelineTests(unittest.TestCase):
         self.assertIsNotNone(result["scores"]["realsense"]["trial_score"])
 
     def test_covariance_learning_does_not_change_fixed_reference(self):
+        self.h.prior.learning_min_samples = 2  # exercise post-warmup behavior in two feedbacks
         startup = self.h.prior.initial_cov_tf.copy()
         for bottle, observed_x in ((7, .9), (8, .8)):
             self.h.fusion._pred_context_cb(self.prior(bottle=bottle))
@@ -84,17 +86,20 @@ class PredictivePipelineTests(unittest.TestCase):
         np.testing.assert_allclose(np.array(context.fixed_covariance).reshape(3, 3), startup)
         self.assertFalse(np.allclose(context.covariance, context.fixed_covariance))
 
-    def test_new_prior_keeps_previous_operation_snapshot_and_bottle(self):
+    def test_new_prior_discards_previous_snapshot_and_keeps_new_bottle(self):
         self.h.fusion.enable_meta = True
         first = self.prior(bottle=7)
         second = self.prior(bottle=8)
         self.h.fusion._pred_context_cb(first)
         self.h.fusion._pred_context_cb(second)
-        snapshot = json.loads(self.h.fusion.predictive_snapshot_pub.publish.call_args.args[0].data)
-        self.assertEqual(snapshot["operation_id"], 1)
-        self.assertEqual(snapshot["bottle_id"], 7)
+        self.h.fusion.predictive_snapshot_pub.publish.assert_not_called()
+        self.h.fusion.used_observation_pub.publish.assert_not_called()
         self.assertEqual(self.h.fusion.prediction_snapshot["operation_id"], 2)
         self.assertEqual(self.h.fusion.prediction_snapshot["bottle_id"], 8)
+        self.h.fusion._finalize_locked('test')
+        snapshot = json.loads(self.h.fusion.predictive_snapshot_pub.publish.call_args.args[0].data)
+        self.assertEqual(snapshot["operation_id"], 2)
+        self.assertEqual(snapshot["bottle_id"], 8)
 
     def test_snapshot_publication_failure_does_not_change_place_or_reset(self):
         self.h.fusion.predictive_snapshot_pub.publish.side_effect = RuntimeError("diagnostic failure")

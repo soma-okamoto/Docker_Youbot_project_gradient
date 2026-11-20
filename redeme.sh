@@ -21,7 +21,7 @@ sudo ntpdate -u ccntp.meijo-u.ac.jp
 
 
 PC2で実行必須 
-sudo ip route add 10.42.0.0/24 via 192.168.11.48
+sudo ip route add 10.42.0.0/24 via 192.168.11.26
 
 PC1で実行必須
 sudo sysctl -w net.ipv4.ip_forward=1
@@ -54,23 +54,23 @@ export ROS_MASTER_URI=http://192.168.11.14:11311
 docker rm -f irm_dev
 docker run -d --name irm_dev --network=host \
   -v ~/Doceker_ws/Docker_ReachabilityMap:/root \
-  -e ROS_MASTER_URI=http://192.168.11.48:11311/ \
-  -e ROS_IP=192.168.11.47  \
+  -e ROS_MASTER_URI=http://192.168.11.26:11311/ \
+  -e ROS_IP=192.168.11.59  \
   irm_dev tail -f /dev/null
 
 
 docker exec -it irm_dev bash
 cd RM
-export ROS_IP=192.168.11.22
-export ROS_MASTER_URI=http://192.168.11.2:11311
+export ROS_IP=192.168.11.59
+export ROS_MASTER_URI=http://192.168.11.26:11311
 source devel/setup.bash
 roslaunch sampled_reachability_maps MR_IRM_generate_Docker.launch
 
 
 docker exec -it irm_dev bash
 cd Detect_ws
-export ROS_IP=192.168.11.47
-export ROS_MASTER_URI=http://192.168.11.48:11311
+export ROS_IP=192.168.11.59
+export ROS_MASTER_URI=http://192.168.11.26:11311
 source devel/setup.bash
 rosrun detect_pkg DetectTarget.py \
   --win=0.5,0.25,0.25 \
@@ -86,15 +86,15 @@ export ROS_MASTER_URI=http://192.168.11.17:11311
 docker rm -f youbot_pro
 docker run -d --name youbot_pro --network=host \
   -v ~/Doceker_ws/Docker_Youbot_project_gradient:/root \
-  -e ROS_MASTER_URI=http://192.168.11.48:11311 \
-  -e ROS_IP=192.168.11.47 \
+  -e ROS_MASTER_URI=http://192.168.11.26:11311 \
+  -e ROS_IP=192.168.11.59 \
   youbot_pro tail -f /dev/null
 
 
 docker exec -it youbot_pro bash
 cd catkin_ws
-export ROS_IP=192.168.11.47
-export ROS_MASTER_URI=http://192.168.11.48:11311
+export ROS_IP=192.168.11.59
+export ROS_MASTER_URI=http://192.168.11.26:11311
 source devel/setup.bash
 
 
@@ -109,6 +109,8 @@ rosrun esaki_youbot_project_gradient youbot_camera_real_trajectory_node.py
 右アーム追従＆tf
 rosrun esaki_youbot_project_gradient youbot_camera_trajectory_TF.py 
 
+rosrun esaki_youbot_project_gradient youbot_camera_trajectory_TF.py \
+  _p_tf_offset_z:=-0.1
 
 ###SimBridge
 rosrun esaki_youbot_project_gradient Bridge_Simulation_command.py
@@ -142,6 +144,25 @@ rosrun esaki_youbot_project_gradient move_base_global_registration.py
 rosrun esaki_youbot_project_gradient afine_transformation.py
 
 
+
+#####基本の局所適応レジストレーション
+roslaunch place_estimation place_estimation_pipeline.launch
+
+
+#予備実験用のデータ収集・解析機能付き局所適応レジストレーション
+SAVE_DIR="$(rospack find place_estimation)/DataSaved"
+
+roslaunch place_estimation preliminary_experiment.launch \
+  output_bag:="$SAVE_DIR/preliminary_13"
+
+#Recording to '...bag'が表示されてから実験を開始してください。
+#実験終了後：
+rosrun place_estimation preliminary_experiment_analyzer.py \
+  "$SAVE_DIR/preliminary_13.bag" \
+  "$SAVE_DIR/preliminary_13_analysis" \
+  --meta-stride 12
+
+
 ########
 catkin clean -f 
  
@@ -151,8 +172,8 @@ catkin clean -f
 ########################################################################################################
 
 cd realsense_ws
-export ROS_IP=192.168.11.47
-export ROS_MASTER_URI=http://192.168.11.48:11311
+export ROS_IP=192.168.11.59
+export ROS_MASTER_URI=http://192.168.11.26:11311
 source devel/setup.bash
 
 roslaunch realsense2_camera cubeslam_camera.launch 
@@ -162,26 +183,45 @@ docker rm -f yolov5-strongsort:rtx5070-cu128
 
 cd /home/dars/catkin_ws/src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
 sudo -E env \
-  ROS_MASTER_URI=http://192.168.11.48:11311 \
-  ROS_IP=192.168.11.47 \
+  ROS_MASTER_URI=http://192.168.11.26:11311 \
+  ROS_IP=192.168.11.59 \
   ./run_rtx5070.sh
+
+
+
+#betu notabu de zikkou
+sudo docker exec -it \
+  -e ROS_MASTER_URI=http://192.168.11.26:11311 \
+  -e ROS_IP=192.168.11.59 \
+  yolov5_strongsort_rtx5070 bash
+
+
+
 
 source /opt/ros/noetic/setup.bash
 source /opt/ros_py310/setup.bash
 source /home/dars/catkin_ws/devel/setup.bash
+cd /home/dars/catkin_ws/src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
+
 
 cd /home/dars/catkin_ws/src/Yolov5_StrongSORT/Yolov5_StrongSORT_OSNet
+bash ./docker-entrypoint_rtx5070.sh bash
+
+##QRより前に起動すること
+rosrun Yolov5_StrongSORT track_P_meta.py
+
+
+##以下は全部同じターミナルで順次起動と停止をする
+#1
+rosrun Yolov5_StrongSORT QRPostion_test.py 
+
+#2
 rosrun Yolov5_StrongSORT track_save_gpu.py \
   --device 0 \
   --view-img
 
-＃これarm2のcommandないとエラーはく
- 
-
-rosrun Yolov5_StrongSORT QRPostion_test.py 
-
-
-
+#3
+rosrun Yolov5_StrongSORT track_P_yolo.py --device 0
 
 
 

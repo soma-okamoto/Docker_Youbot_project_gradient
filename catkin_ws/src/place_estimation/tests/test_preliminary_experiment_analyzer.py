@@ -31,6 +31,37 @@ def feedback(seq, stamp):
 
 
 class FeedbackAttributionTests(unittest.TestCase):
+    def test_startup_configuration_is_retained_and_repeated_latched_delivery_is_deduplicated(self):
+        extractor = analyzer.BagExtractor()
+        record = {'schema_version': 1, 'recording_id': 'trial_10',
+                  'runtime_parameters': {'/prior_distribution_node': {
+                      'learning_min_samples': 10, 'covariance_initial_weight': .5}},
+                  'package_files': {'config/example.yaml': {'content': 'value: 1\n'}}}
+        for _ in range(2):
+            extractor.consume('/experiment_configuration', NS(data=json.dumps(record)), NS(to_sec=lambda: 1.))
+        self.assertEqual(list(extractor.experiment_configurations), ['trial_10'])
+        self.assertEqual(extractor.experiment_configurations['trial_10'], record)
+        self.assertEqual(extractor.trials, {})
+
+    def test_invalid_configuration_does_not_abort_bag_extraction(self):
+        extractor = analyzer.BagExtractor()
+        extractor.consume('/experiment_configuration', NS(data='[]'), NS(to_sec=lambda: 1.))
+        self.assertEqual(extractor.experiment_configurations, {})
+        self.assertEqual(len(extractor.configuration_errors), 1)
+
+    def test_posterior_after_cancelled_prior_uses_timestamp_not_publisher_sequence(self):
+        extractor = analyzer.BagExtractor()
+        time = NS(to_sec=lambda: 1.)
+        extractor.consume('/P_pred', prior(1, 100), time)
+        extractor.consume('/P_pred', prior(2, 200), time)
+        posterior = prior(1, 200)  # first published result belongs to operation 2
+        posterior.pose.position.x = 2.
+        extractor.consume('/P_place', posterior, time)
+        extractor.consume('/Sigma_place', NS(data=[.01] * 9), time)
+        self.assertNotIn('place_x', extractor.trials[1])
+        self.assertEqual(extractor.trials[2]['place_x'], 2.)
+        self.assertEqual(extractor.trials[2]['place_cov_xx'], .01)
+
     def test_bottle_id_is_not_used_as_operation_id(self):
         extractor = analyzer.BagExtractor()
         time = NS(to_sec=lambda: 1.)

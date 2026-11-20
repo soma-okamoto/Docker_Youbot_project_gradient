@@ -31,6 +31,8 @@ N(P_place, Sigma_place) を生成するROS1ノード。
   距離に基づいてフレーム間対応を取り、検出継続率と位置ばらつきから
   安定候補を形成する。代表位置はフレーム平均、代表共分散は標本共分散/N
   とフレームごとのセンサ共分散/Nの和から計算する。
+- 既定では両センサの有効観測が揃った時点で早期確定する。
+  新しい事前分布が届いた場合、前操作は結果を配信せずキャンセルする。
 
 候補選択と融合:
 - 非有限、非正定値、または最大主軸標準偏差が上限を超える候補を棄却する。
@@ -57,6 +59,7 @@ config/local_registration_thresholds.yamlから設定する。
 import threading
 import copy
 import json
+import time
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -321,7 +324,7 @@ class ObservationFusionNode:
         # Waiting / CI weights
         # ================================================================
         self.observation_timeout = float(
-            rospy.get_param("~observation_timeout", 2.0)
+            rospy.get_param("~observation_timeout", 5.0)
         )
         if (
             not np.isfinite(self.observation_timeout)
@@ -330,6 +333,9 @@ class ObservationFusionNode:
             raise ValueError(
                 "~observation_timeout must be finite and positive"
             )
+        self.wait_full_observation_window = bool(
+            rospy.get_param("~wait_full_observation_window", False)
+        )
 
         self.ci_weight_mode = str(
             rospy.get_param("~observation_ci_weight_mode", "optimize")
@@ -373,10 +379,8 @@ class ObservationFusionNode:
         self.max_std_yolo = self._load_positive_float("~max_std_yolo", 0.10)
         self.max_std_meta = self._load_positive_float("~max_std_meta", 0.10)
         self.min_observation_frames = self._load_positive_int(
-            "~min_observation_frames", 3
+            "~min_observation_frames", 2
         )
-        if self.min_observation_frames < 2:
-            raise ValueError("~min_observation_frames must be at least 2")
         self.min_detection_ratio = float(
             rospy.get_param("~min_detection_ratio", 0.60)
         )
@@ -443,6 +447,7 @@ class ObservationFusionNode:
         self.yolo_frames = []
         self.meta_frames = []
         self.timer = None
+        self.observation_deadline = None
 
         # ================================================================
         # Publishers
@@ -587,6 +592,11 @@ class ObservationFusionNode:
         rospy.loginfo(
             "observation_timeout=%.3f s",
             self.observation_timeout,
+        )
+        rospy.loginfo("wait_full_observation_window=%s", self.wait_full_observation_window)
+        rospy.loginfo(
+            "min_observation_frames=%d, min_detection_ratio=%.2f",
+            self.min_observation_frames, self.min_detection_ratio,
         )
 
     # ====================================================================
@@ -1000,10 +1010,12 @@ class ObservationFusionNode:
 
         if self.active:
             rospy.logwarn(
-                "New prior received; finalizing operation %d first",
+                "New prior received; cancelling operation %d without publishing a result",
                 self.operation_id,
             )
-            self._finalize_locked("new_prior")
+            if self.timer is not None:
+                self.timer.shutdown()
+            self._reset_locked()
 
         self.operation_id += 1
         self.active = True
@@ -1011,7 +1023,7 @@ class ObservationFusionNode:
         self.prior = self.pending_pred.copy()
         self.prior_cov = self.pending_cov.copy()
         self.prior_header = self.pending_pred_header
-        # Finalizing the previous operation above still uses its previous ID.
+        # Pending prior fields survive cancellation of the old active operation.
         self.bottle_id = self.pending_bottle_id
         self.prior_sources = {
             name: (position.copy(), covariance.copy())
@@ -1035,11 +1047,8 @@ class ObservationFusionNode:
         self.yolo_frames = []
         self.meta_frames = []
 
-        self.timer = rospy.Timer(
-            rospy.Duration(self.observation_timeout),
-            self._timeout_cb,
-            oneshot=True,
-        )
+        self.observation_deadline = time.monotonic() + self.observation_timeout
+        self._arm_timeout_locked(self.observation_timeout)
 
         rospy.loginfo(
             "Operation %d started: P_pred=%s",
@@ -1047,7 +1056,7 @@ class ObservationFusionNode:
             np.array2string(self.prior, precision=6),
         )
 
-        if not self.enable_yolo and not self.enable_meta:
+        if not self.wait_full_observation_window and not self.enable_yolo and not self.enable_meta:
             self._finalize_locked("sensors_disabled")
 
     # ====================================================================
@@ -1243,39 +1252,54 @@ class ObservationFusionNode:
     # Timing
     # ====================================================================
 
-    def _sensor_done(
-        self,
-        enabled: bool,
-        mode: str,
-        received: bool,
-    ) -> bool:
-        if not enabled:
+    def _sensor_ready(self, sensor: str) -> bool:
+        """Require a quality-valid, reference-supported observation, not just receipt."""
+        if not getattr(self, "enable_" + sensor):
             return True
-        if mode == "stream":
+        if not getattr(self, sensor + "_received"):
             return False
-        return received
+        if getattr(self, sensor + "_input_mode") == "stream":
+            candidates, covariances = self._summarize_stream_candidates(sensor, commit=False)
+        else:
+            candidates = getattr(self, sensor + "_candidates")
+            covariances = getattr(self, sensor + "_covariances")
+        for position, covariance in zip(candidates, covariances):
+            covariance = self._stable_covariance(covariance, getattr(self, "max_std_" + sensor))
+            if covariance is None:
+                continue
+            if min(self._reference_distances(position, covariance).values()) <= getattr(
+                self, "candidate_gate_" + sensor
+            ):
+                return True
+        return False
 
     def _try_finalize_early_locked(self) -> None:
-        yolo_done = self._sensor_done(
-            self.enable_yolo,
-            self.yolo_input_mode,
-            self.yolo_received,
-        )
-        meta_done = self._sensor_done(
-            self.enable_meta,
-            self.meta_input_mode,
-            self.meta_received,
+        if self.wait_full_observation_window:
+            return
+        if self._sensor_ready("yolo") and self._sensor_ready("meta"):
+            self._finalize_locked("all_valid_observations_received")
+
+    def _arm_timeout_locked(self, delay: float) -> None:
+        operation_id = self.operation_id
+        self.timer = rospy.Timer(
+            rospy.Duration(delay),
+            lambda event: self._timeout_cb(event, operation_id),
+            oneshot=True,
         )
 
-        if yolo_done and meta_done:
-            self._finalize_locked(
-                "all_packed_observations_received"
-            )
-
-    def _timeout_cb(self, _event) -> None:
+    def _timeout_cb(self, _event, operation_id=None) -> None:
         with self.lock:
-            if self.active:
-                self._finalize_locked("timeout")
+            if not self.active or (operation_id is not None and operation_id != self.operation_id):
+                return
+            if self.observation_deadline is not None:
+                remaining = self.observation_deadline - time.monotonic()
+                if remaining > 0.0:
+                    # A ROS clock jump must not shorten the actual collection window.
+                    if self.timer is not None:
+                        self.timer.shutdown()
+                    self._arm_timeout_locked(remaining)
+                    return
+            self._finalize_locked("timeout")
 
     # ====================================================================
     # Candidate selection, prior-distance rejection, and diagnostics
@@ -1308,7 +1332,7 @@ class ObservationFusionNode:
             return None
         return self._regularize(covariance)
 
-    def _summarize_stream_candidates(self, sensor: str) -> None:
+    def _summarize_stream_candidates(self, sensor: str, commit: bool = True):
         """Associate stream detections and form stable representative observations."""
         if sensor == "yolo":
             if self.yolo_input_mode != "stream":
@@ -1395,11 +1419,16 @@ class ObservationFusionNode:
 
             positions = np.vstack(track["positions"])
             mean_position = np.mean(positions, axis=0)
-            centered = positions - mean_position
-            frame_covariance = (centered.T @ centered) / float(count - 1)
-            frame_covariance = 0.5 * (
-                frame_covariance + frame_covariance.T
-            )
+            if count == 1:
+                # Temporal jitter is unknown with one frame. Keep the supplied
+                # sensor uncertainty below; never divide by (count - 1).
+                frame_covariance = np.zeros((3, 3), dtype=float)
+            else:
+                centered = positions - mean_position
+                frame_covariance = (centered.T @ centered) / float(count - 1)
+                frame_covariance = 0.5 * (
+                    frame_covariance + frame_covariance.T
+                )
             frame_values = np.linalg.eigvalsh(frame_covariance)
             frame_std = float(
                 np.sqrt(max(frame_values[-1], 0.0))
@@ -1423,6 +1452,9 @@ class ObservationFusionNode:
 
             representative_positions.append(mean_position)
             representative_covariances.append(representative_covariance)
+
+        if not commit:
+            return representative_positions, representative_covariances
 
         if sensor == "yolo":
             self.yolo_candidates = representative_positions
@@ -2250,6 +2282,7 @@ class ObservationFusionNode:
         self.yolo_frames = []
         self.meta_frames = []
         self.timer = None
+        self.observation_deadline = None
 
 
 def main() -> None:

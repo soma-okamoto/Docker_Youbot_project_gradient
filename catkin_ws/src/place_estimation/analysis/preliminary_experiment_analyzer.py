@@ -64,6 +64,8 @@ class BagExtractor:
         self.predictive_inputs = {}
         self.predictive_results = {}
         self.predictive_errors = []
+        self.experiment_configurations = {}
+        self.configuration_errors = []
 
     @staticmethod
     def _predictive_key(record):
@@ -173,6 +175,19 @@ class BagExtractor:
     def consume(self, topic, message, bag_time):
         timestamp = float(bag_time.to_sec())
 
+        if topic == '/experiment_configuration':
+            try:
+                record = json.loads(message.data)
+                if (record.get('schema_version') != 1
+                        or not isinstance(record.get('recording_id'), str)
+                        or not record['recording_id']
+                        or not isinstance(record.get('runtime_parameters'), dict)):
+                    raise ValueError('Invalid experiment configuration record')
+                self.experiment_configurations.setdefault(record['recording_id'], record)
+            except (AttributeError, TypeError, ValueError) as error:
+                self.configuration_errors.append(str(error))
+            return
+
         if topic in {"/predictive_evaluation_input", "/predictive_evaluation"}:
             try:
                 record = json.loads(message.data)
@@ -268,9 +283,16 @@ class BagExtractor:
             return
 
         if topic == "/P_place":
-            operation_id = self._operation_id(
-                message, self.active_operation_id
-            )
+            # A cancelled operation has no output, so posterior Header.seq can
+            # differ from the prior operation ID. Match its echoed timestamp.
+            stamp = getattr(getattr(message, "header", None), "stamp", None)
+            if stamp is not None:
+                matches = self.prior_operations_by_stamp.get(stamp.to_nsec(), [])
+                if len(matches) != 1:
+                    return
+                operation_id = matches[0]
+            else:
+                operation_id = self._operation_id(message, self.active_operation_id)
             if operation_id is None:
                 return
             row = self._trial(operation_id)
@@ -547,6 +569,7 @@ def main():
         "/learned_bias_tf", "/learned_covariance_current",
         "/learned_covariance_tf",
         "/predictive_evaluation_input", "/predictive_evaluation",
+        "/experiment_configuration",
     ]
     with rosbag.Bag(arguments.bag, "r") as bag:
         for topic, message, bag_time in bag.read_messages(topics=topics):
@@ -555,6 +578,11 @@ def main():
     output_directory = Path(arguments.output_directory)
     predictive_summary = extractor.finalize_predictive_evaluation()
     output_directory.mkdir(parents=True, exist_ok=True)
+    configurations = list(extractor.experiment_configurations.values())
+    with (output_directory / 'experiment_configuration.json').open('w', encoding='utf-8') as stream:
+        json.dump({'schema_version': 1, 'records': configurations}, stream,
+                  ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
+        stream.write('\n')
     trials = sorted(
         extractor.trials.values(), key=lambda row: int(row["operation_id"])
     )
@@ -581,6 +609,20 @@ def main():
     report["source_bag"] = str(Path(arguments.bag).resolve())
     report["final_adaptation_summary"] = extractor.final_adaptation_summary
     report["predictive_evaluation"] = predictive_summary
+    report['experiment_configurations'] = [
+        {key: record.get(key) for key in (
+            'recording_id', 'captured_at_utc', 'git_revision',
+            'git_tracked_files_modified', 'runtime_parameters', 'capture_errors',
+        )} for record in configurations
+    ]
+    if not configurations:
+        report['warnings'].append(
+            'No startup experiment configuration was recorded; current config files '
+            'must not be treated as the settings used for this historical bag.'
+        )
+    elif len(configurations) > 1:
+        report['warnings'].append('Multiple startup configuration records were found; review each recording session.')
+    report['warnings'].extend('Experiment configuration: ' + error for error in extractor.configuration_errors)
     if not extractor.predictive_results:
         report["warnings"].append(
             "No atomic predictive snapshots/results were recorded; sensor NLL is unavailable."

@@ -26,6 +26,24 @@ refer to the bottle centre. Upstream producers are responsible for:
 Array messages do not contain a ROS header. The fusion node therefore cannot
 transform or timestamp-check `/P_current`, `/P_yolo`, or array-form `/P_meta`.
 
+The default observation window is at most 5 seconds with
+`wait_full_observation_window: false`. All enabled sensors having a valid
+observation finishes the operation early. Validity includes covariance and
+reference-distance gates; stream inputs also require the configured temporal
+stability, frame count and detection ratio, evaluated on frames received so far.
+An empty message does not count as a valid observation. If only one sensor is
+ready, fusion waits until the deadline and then uses whichever observations
+are valid. A monotonic deadline prevents a premature ROS timer callback from
+ending this wait early. Setting `wait_full_observation_window: true` disables
+observation-driven early completion.
+
+A new complete, valid prior always cancels the previous unfinished operation,
+clears its observations and starts a fresh window immediately. The cancelled
+operation publishes no Place result, learning feedback or predictive snapshot.
+Its old timer cannot finalize the new operation. No priors are queued. Sensor
+arrays have no operation ID, so upstream producers must avoid sending old
+operation observations after switching to the new Place.
+
 ## Inputs
 
 ### `/P_current` (`std_msgs/Float32MultiArray`)
@@ -82,6 +100,14 @@ The configured packed record is:
 In `packed` mode, one message contains already formed candidates. In `stream`
 mode, one message represents one observation frame and the node forms temporal
 tracks, representative means, and representative covariances.
+
+The default minimum is two detected frames (`min_observation_frames: 2`). A
+single-frame track is rejected under this default. If the minimum is explicitly
+set to one, its position and supplied sensor covariance are retained;
+temporal jitter cannot be estimated and there is no sample-covariance division
+by zero. Two or more frames still use the temporal sample covariance and the
+sensor contribution divided by the track's detection count. The 60% detection
+ratio, covariance validity and reference-distance gates remain in force.
 
 ### `/P_meta` (`std_msgs/Float32MultiArray` by default)
 

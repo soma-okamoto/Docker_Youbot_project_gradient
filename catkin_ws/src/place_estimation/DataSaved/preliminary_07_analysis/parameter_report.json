@@ -1,0 +1,306 @@
+{
+  "current_min_variance_m2": 1e-08,
+  "data_completeness": {
+    "KL_evaluation": 17,
+    "P_current": 17,
+    "P_tf": 17,
+    "posterior_distribution": 17,
+    "prior_distribution": 17
+  },
+  "distributions": {
+    "kl_prior_to_posterior": {
+      "count": 17,
+      "maximum": 1106.4444481144214,
+      "mean": 115.90949340035053,
+      "minimum": 0.0,
+      "p05": 0.0,
+      "p50": 0.0,
+      "p90": 345.6067758766153,
+      "p95": 912.5024413761141,
+      "p99": 1067.65604676676,
+      "sample_std": 329.9952090193523
+    },
+    "mean_shift_m": {
+      "count": 17,
+      "maximum": 0.42128865444100067,
+      "mean": 0.042513864083949506,
+      "minimum": 0.0,
+      "p05": 0.0,
+      "p50": 0.0,
+      "p90": 0.12057881399445648,
+      "p95": 0.3254153588771128,
+      "p99": 0.4021139953282231,
+      "sample_std": 0.12186779681116529
+    },
+    "selected_meta_d2": {
+      "count": 0
+    },
+    "selected_yolo_d2": {
+      "count": 2,
+      "maximum": 225.3027801513672,
+      "mean": 175.91839981079102,
+      "minimum": 126.53401947021484,
+      "p05": 131.47245750427246,
+      "p50": 175.91839981079102,
+      "p90": 215.42590408325196,
+      "p95": 220.36434211730958,
+      "p99": 224.31509254455565,
+      "sample_std": 69.84006044703406
+    },
+    "selected_yolo_meta_d2": {
+      "count": 0
+    },
+    "used_observation_principal_std_m": {
+      "count": 2,
+      "maximum": 0.01019416783147321,
+      "mean": 0.010097993413302106,
+      "minimum": 0.010001818995131001,
+      "p05": 0.010011436436948112,
+      "p50": 0.010097993413302106,
+      "p90": 0.010174932947838989,
+      "p95": 0.0101845503896561,
+      "p99": 0.010192244343109788,
+      "sample_std": 0.00013601116653091756
+    },
+    "yolo_candidate_principal_std_m": {
+      "count": 13,
+      "maximum": 0.010773352764879602,
+      "mean": 0.010108741205711435,
+      "minimum": 0.010000172684220912,
+      "p05": 0.010000915214896742,
+      "p50": 0.010003927313351032,
+      "p90": 0.010220597380854604,
+      "p95": 0.010445663966871813,
+      "p99": 0.010707815005278044,
+      "sample_std": 0.00021474117036394917
+    }
+  },
+  "final_adaptation_summary": {
+    "adaptation_claim_supported": false,
+    "adaptation_state": "adapted_stable",
+    "covariance_component_trend": {
+      "count": 17,
+      "first": 0.0,
+      "initial_window_mean": 3.8820701834003244,
+      "latest": 0.0,
+      "maximum": 15.114930781596838,
+      "minimum": 0.0,
+      "normalized_recent_slope": 0.0,
+      "overall_change": "improved",
+      "recent_direction": "flat",
+      "recent_slope_per_trial": 0.0,
+      "recent_window_mean": 0.0,
+      "relative_improvement": 1.0,
+      "slope_per_trial": -0.38504443078282113
+    },
+    "interpretation": "prior_posterior_disagreement_only",
+    "kl_trend": {
+      "count": 17,
+      "first": 0.0,
+      "initial_window_mean": 368.81481603814046,
+      "latest": 0.0,
+      "maximum": 1106.4444481144214,
+      "minimum": 0.0,
+      "normalized_recent_slope": 0.0,
+      "overall_change": "improved",
+      "recent_direction": "flat",
+      "recent_slope_per_trial": 0.0,
+      "recent_window_mean": 0.0,
+      "relative_improvement": 1.0,
+      "slope_per_trial": -29.571558419751565
+    },
+    "latest": {
+      "covariance_component": 0.0,
+      "kl_prior_to_posterior": 0.0,
+      "mean_component": 0.0,
+      "mean_shift_m": 0.0
+    },
+    "latest_operation_id": 17,
+    "mean_component_trend": {
+      "count": 17,
+      "first": 0.0,
+      "initial_window_mean": 364.9327458547402,
+      "latest": 0.0,
+      "maximum": 1094.7982375642205,
+      "minimum": 0.0,
+      "normalized_recent_slope": 0.0,
+      "overall_change": "improved",
+      "recent_direction": "flat",
+      "recent_slope_per_trial": 0.0,
+      "recent_window_mean": 0.0,
+      "relative_improvement": 1.0,
+      "slope_per_trial": -29.18651398896874
+    },
+    "mean_shift_trend": {
+      "count": 17,
+      "first": 0.0,
+      "initial_window_mean": 0.14042955148033356,
+      "latest": 0.0,
+      "maximum": 0.42128865444100067,
+      "minimum": 0.0,
+      "normalized_recent_slope": 0.0,
+      "overall_change": "improved",
+      "recent_direction": "flat",
+      "recent_slope_per_trial": 0.0,
+      "recent_window_mean": 0.0,
+      "relative_improvement": 1.0,
+      "slope_per_trial": -0.010922195480435562
+    },
+    "sample_count": 17,
+    "schema_version": 1
+  },
+  "learned_covariance_eigenvalues_m2": {
+    "count": 12,
+    "maximum": 0.04535056361347307,
+    "mean": 0.004791956116645064,
+    "minimum": 9.999999999080797e-09,
+    "p05": 9.999999999355516e-09,
+    "p50": 0.00065,
+    "p90": 0.0029075828076409343,
+    "p95": 0.022031832008510086,
+    "p99": 0.0406868172924805,
+    "sample_std": 0.012826531235714991
+  },
+  "learning_update_count": 2,
+  "min_variance_floor_hit_count": 4,
+  "operation_error_repeatability": {
+    "current_minus_used_observation": {
+      "count": 2,
+      "mean": [
+        -0.07614817842841148,
+        -0.060800954699516296,
+        -0.09606211446225643
+      ],
+      "sample_covariance": [
+        [
+          0.0012915308513961332,
+          0.0005393195641424375,
+          -0.0013918334081931688
+        ],
+        [
+          0.0005393195641424375,
+          0.0002252099451998113,
+          -0.0005812040697705245
+        ],
+        [
+          -0.0013918334081931688,
+          -0.0005812040697705245,
+          0.0014999256379114104
+        ]
+      ],
+      "sample_std": [
+        0.035937874887034336,
+        0.015006996541607228,
+        0.03872887343974015
+      ]
+    },
+    "tf_minus_used_observation": {
+      "count": 2,
+      "mean": [
+        0.030637925824358134,
+        0.1142967310074334,
+        0.24407461515280315
+      ],
+      "sample_covariance": [
+        [
+          0.000667387001842641,
+          0.002890188696886208,
+          0.004639422097159564
+        ],
+        [
+          0.002890188696886208,
+          0.012516262199512157,
+          0.020091499037699655
+        ],
+        [
+          0.004639422097159564,
+          0.020091499037699655,
+          0.03225150824961304
+        ]
+      ],
+      "sample_std": [
+        0.02583383443940603,
+        0.11187610200356535,
+        0.17958704922575303
+      ]
+    }
+  },
+  "parameter_candidates": {
+    "bias_stability_tolerance_m": 0.002,
+    "gate_meta_p95_diagnostic": null,
+    "gate_yolo_meta_p95_diagnostic": null,
+    "gate_yolo_p95_diagnostic": 220.36434211730958,
+    "learning_min_samples_stability_candidate": null,
+    "max_std_yolo_p95_m_diagnostic": 0.010445663966871813,
+    "stable_updates_required": 3
+  },
+  "predictive_evaluation": {
+    "interpretation": "paired_sensor_prediction_surrogate_unverified_target_and_independence",
+    "latest_learning_sample_count_before_trial": 2,
+    "latest_operation_id": 17,
+    "schema_version": 1,
+    "sensors": {
+      "meta": {
+        "adaptive_floor_hit_trials": 0,
+        "adaptive_mean_mahalanobis_squared": null,
+        "adaptive_observation_rmse_m": null,
+        "adaptive_predictive_coverage_95": null,
+        "cumulative_delta_nll": null,
+        "enabled_trials": 17,
+        "fixed_floor_hit_trials": 0,
+        "fixed_mean_mahalanobis_squared": null,
+        "fixed_observation_rmse_m": null,
+        "fixed_predictive_coverage_95": null,
+        "mean_adaptive_nll": null,
+        "mean_delta_nll": null,
+        "mean_fixed_nll": null,
+        "observation_received_rate": 0.0,
+        "positive_delta_trials": 0,
+        "received_trials": 0,
+        "recent_mean_delta_nll": null,
+        "scored_trial_rate": 0.0,
+        "scored_trials": 0,
+        "status_counts": {
+          "no_observation": 17
+        }
+      },
+      "realsense": {
+        "adaptive_floor_hit_trials": 11,
+        "adaptive_mean_mahalanobis_squared": 645.4893418498589,
+        "adaptive_observation_rmse_m": 0.26561493157915783,
+        "adaptive_predictive_coverage_95": 0.0,
+        "cumulative_delta_nll": -3509.7432533153174,
+        "enabled_trials": 17,
+        "fixed_floor_hit_trials": 0,
+        "fixed_mean_mahalanobis_squared": 98.94074495988865,
+        "fixed_observation_rmse_m": 0.29619295762845566,
+        "fixed_predictive_coverage_95": 0.0,
+        "mean_adaptive_nll": 310.99938721402407,
+        "mean_delta_nll": -269.98025025502443,
+        "mean_fixed_nll": 41.01913695899969,
+        "observation_received_rate": 1.0,
+        "positive_delta_trials": 0,
+        "received_trials": 17,
+        "recent_mean_delta_nll": -338.6013416339813,
+        "scored_trial_rate": 0.7647058823529411,
+        "scored_trials": 13,
+        "status_counts": {
+          "no_quality_candidate": 4,
+          "scored_unverified_target": 13
+        }
+      }
+    },
+    "trial_count": 17,
+    "window_size": 10
+  },
+  "schema_version": 1,
+  "source_bag": "/root/catkin_ws/src/place_estimation/DataSaved/preliminary_07.bag",
+  "trial_count": 17,
+  "warnings": [
+    "These values describe repeatability and internal consistency; they do not measure absolute accuracy without ground truth.",
+    "P95 values are diagnostic candidates only. Freeze parameters using separate calibration data before the main experiment.",
+    "Distance distributions are affected by the current covariance and candidate-selection settings.",
+    "Learned covariance eigenvalues hit the current floor 4 times; min_variance requires review.",
+    "The recorded bias history did not establish a learning_min_samples candidate."
+  ]
+}

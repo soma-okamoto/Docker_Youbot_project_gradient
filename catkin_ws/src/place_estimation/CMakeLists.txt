@@ -29,6 +29,7 @@ catkin_install_python(
     evaluation/kl_evaluation_node.py
     evaluation/predictive_evaluation_node.py
     analysis/preliminary_experiment_analyzer.py
+    analysis/experiment_configuration_recorder.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

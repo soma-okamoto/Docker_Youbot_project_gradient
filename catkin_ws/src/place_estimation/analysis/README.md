@@ -20,6 +20,38 @@ Place操作を開始してください。開始直後に入力すると、rosbag
 人の操作に合わせて任意回数のPlace試行を行い、終了時に`Ctrl-C`を押します。
 試行数はlaunchやスクリプトで事前指定しません。
 
+### 実験9以降の設定履歴
+
+実験9のbagと解析結果は、`DataSaved/experiment_baselines/preliminary_09/`にも
+比較基準としてコピーし、`baseline_manifest.json`にSHA-256を保存しています。
+実験9には起動設定の一括記録がないため、未記録の設定は不明として扱います。
+現在のYAMLを実験9の実行時設定として代用しません。
+
+以後、`preliminary_experiment.launch`は起動時設定を自動保存します。
+実験番号ごとに新しい`output_bag`名を使ってください（例：`preliminary_10`）。
+
+```text
+DataSaved/
+├── preliminary_10.bag
+├── preliminary_10.settings.json
+└── preliminary_10_analysis/
+    ├── experiment_configuration.json
+    ├── trials.csv
+    ├── learning_history.csv
+    ├── predictive_evaluation.csv
+    └── parameter_report.json
+```
+
+`*.settings.json`には、起動時のノード別ROSパラメータ、利用可能な本パッケージの
+コード・YAML・launch・メッセージ定義の内容とハッシュ、Gitリビジョンを記録します。
+同じ内容をlatchedな`/experiment_configuration`へ配信し、bagにも記録します。
+そのためbagを別PCへコピーしても、解析時に`experiment_configuration.json`を復元できます。
+既存の設定JSONは上書きしません。`parameter_report.json`にも設定の要約が入ります。
+
+これは起動時の記録です。実験中に設定を変更せず、変更時は新しい実験番号で再起動します。
+別PCのUnityソースや外部YOLOのモデル重みは保存対象に含まれません。
+Git取得ができない環境でも、取得できた設定・コードの内容は残します。
+
 ## 2. 解析
 
 catkinワークスペースをビルド・sourceした後、次を実行します。
@@ -45,6 +77,7 @@ preliminary_01_analysis/
 ├── trials.csv
 ├── learning_history.csv
 ├── predictive_evaluation.csv
+├── experiment_configuration.json
 └── parameter_report.json
 ```
 
@@ -80,6 +113,10 @@ preliminary_01_analysis/
 ライブ結果もある場合は重複集計しません。古いbagで両トピックともない場合は
 NLLを生成せず、レポートに不足を記載します。既存bag・学習状態は書き換えません。
 
+新しいpriorでキャンセルされた試行は事前分布だけの行が残る場合があります。
+キャンセルは結果・学習・NLLを生成しません。`P_place`はpriorと同じtimestampで
+対応付けるため、キャンセルによって配信連番がずれても次の試行へ正しく記録します。
+
 現在のMeta配列は1候補12要素が既定です。旧XYZ形式のbagを解析するときは
 `--meta-stride 3`を指定してください。
 
@@ -96,6 +133,7 @@ NLLを生成せず、レポートに不足を記載します。既存bag・学�
 
 次を集計します。
 
+- 実験時の起動設定要約（`experiment_configurations`、記録がある場合）
 - 距離・KL・平均位置差の平均、標準偏差、百分位点
 - `P_current/P_tf - 採用物理観測`の平均と標本共分散
 - 候補・採用観測の最大主軸標準偏差分布
